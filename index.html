@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>StreamViewer</title>
+<meta name="description" content="YouTube / Twitch マルチビュアー" />
+<meta name="theme-color" content="#0f1115" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <header id="topbar">
+    <button id="sidebarToggle" class="icon-btn" title="サイドバー切替" aria-label="サイドバー切替">☰</button>
+    <div id="brand">Stream<span>Viewer</span></div>
+
+    <div id="presetBar" class="presetbar" hidden>
+      <select id="presetSelect" title="プリセット"></select>
+      <button id="presetLoadBtn" class="btn small">読込</button>
+      <button id="presetSaveBtn" class="btn small">保存</button>
+      <button id="presetSaveAsBtn" class="btn small">名前を付けて保存</button>
+      <button id="presetDeleteBtn" class="btn small danger">削除</button>
+      <button id="presetExportBtn" class="btn small" title="JSONで書き出し">書出</button>
+      <button id="presetImportBtn" class="btn small" title="JSONを読み込み">読込(JSON)</button>
+      <input type="file" id="presetImportFile" accept="application/json" hidden />
+    </div>
+
+    <div id="topbarRight">
+      <button id="presetBarToggleBtn" class="icon-btn" title="プリセットバーを表示" aria-label="プリセットバー表示切替">🗂</button>
+      <button id="autoArrangeBtn" class="btn small" title="自動整列">自動整列</button>
+      <button id="clearAllBtn" class="btn small danger" title="全て閉じる">全て閉じる</button>
+      <button id="settingsBtn" class="icon-btn" title="設定" aria-label="設定">⚙</button>
+    </div>
+  </header>
+
+  <div id="body">
+    <aside id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">配信を追加 (URL / ID)</div>
+        <form id="addByUrlForm" class="add-url-form">
+          <input id="addByUrlInput" type="text" placeholder="YouTube/Twitch のURL・動画ID・チャンネル名 を貼り付け" autocomplete="off" />
+          <select id="addByUrlPlatformHint" title="URLが判別できない場合に使用するプラットフォーム">
+            <option value="auto">自動判別</option>
+            <option value="youtube">YouTube</option>
+            <option value="twitch">Twitch</option>
+          </select>
+          <button type="submit" class="btn small primary">追加</button>
+        </form>
+        <div id="addUrlHint" class="hint"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="favorites">お気に入り</button>
+          <button class="tab-btn" data-tab="archive">アーカイブ</button>
+        </div>
+
+        <div id="favTab" class="tab-panel active">
+          <div class="auth-row">
+            <button id="ytAuthBtn" class="btn small yt">YouTubeでログイン</button>
+            <button id="twAuthBtn" class="btn small tw">Twitchでログイン</button>
+          </div>
+          <form id="addFavoriteForm" class="add-fav-form">
+            <input id="addFavoriteInput" type="text" placeholder="お気に入りに追加するチャンネルURL" autocomplete="off" />
+            <button type="submit" class="btn small">追加</button>
+          </form>
+          <div id="favList" class="channel-list"></div>
+        </div>
+
+        <div id="archiveTab" class="tab-panel">
+          <div id="archiveList" class="channel-list"></div>
+        </div>
+      </div>
+    </aside>
+
+    <main id="canvasWrap">
+      <div id="canvas" class="canvas"></div>
+      <div id="emptyState" class="empty-state">
+        <p>👋 サイドバーからチャンネルを追加するか、上のURL欄に YouTube / Twitch のURLを貼り付けて配信を開いてください。</p>
+        <p class="empty-sub">複数配信を同時に開いて、自由にサイズ・配置を変更できます。配置は「プリセット」として保存できます。</p>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div id="settingsModal" class="modal-backdrop" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h2>設定</h2>
+      <button id="settingsCloseBtn" class="icon-btn">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-note">
+        API情報はこの端末のブラウザ内(localStorage)にのみ保存され、StreamViewer以外のどこにも送信されません。
+        取得方法は同梱の README.md を参照してください（どちらも無料・クレジットカード不要です）。
+      </p>
+
+      <fieldset>
+        <legend>YouTube</legend>
+        <label>YouTube Data API キー
+          <input id="settingYtApiKey" type="text" placeholder="AIza..." autocomplete="off" />
+        </label>
+        <label>OAuth クライアントID (登録チャンネル一覧取得に必要)
+          <input id="settingYtClientId" type="text" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off" />
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Twitch</legend>
+        <label>クライアントID
+          <input id="settingTwClientId" type="text" placeholder="Twitch Developer Console のClient ID" autocomplete="off" />
+        </label>
+        <label>リダイレクトURI
+          <input id="settingTwRedirectUri" type="text" placeholder="例: http://localhost:5173/" autocomplete="off" />
+        </label>
+      </fieldset>
+
+      <div class="modal-actions">
+        <button id="settingsSaveBtn" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Generic prompt/confirm modal -->
+<div id="promptModal" class="modal-backdrop" hidden>
+  <div class="modal small">
+    <div class="modal-header">
+      <h2 id="promptTitle">入力</h2>
+      <button id="promptCloseBtn" class="icon-btn">✕</button>
+    </div>
+    <div class="modal-body">
+      <input id="promptInput" type="text" />
+      <div class="modal-actions">
+        <button id="promptCancelBtn" class="btn">キャンセル</button>
+        <button id="promptOkBtn" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastHost"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
