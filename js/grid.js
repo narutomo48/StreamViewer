@@ -17,13 +17,20 @@ const MIN_W = 240;
 const MIN_H = 170;
 const GAP = 16;
 
-let canvasEl, canvasWrapEl, emptyStateEl;
+let canvasEl, canvasWrapEl, emptyStateEl, autoArrangeBtn;
+
+// Auto-arrange cycles through a fixed set of column counts each time the
+// button is pressed (1 -> 2 -> 3 -> 1 -> ...), instead of always picking
+// the "best fit" column count automatically.
+const AUTO_ARRANGE_COLS_CYCLE = [1, 2, 3];
+let autoArrangeCycleIndex = 0;
 const instances = new Map(); // panelId -> { root, videoBox, chatBox, player, headerVolume, muteBtn, chatBtn, destroyed, isChatOnly }
 
 export function initGrid() {
   canvasEl = document.getElementById("canvas");
   canvasWrapEl = document.getElementById("canvasWrap");
   emptyStateEl = document.getElementById("emptyState");
+  autoArrangeBtn = document.getElementById("autoArrangeBtn");
 
   subscribe((state) => reconcile(state));
   window.addEventListener("resize", () => applyResponsiveMode());
@@ -133,8 +140,12 @@ export function autoArrange() {
   const state = getState();
   const panels = state.panels;
   if (!panels.length) return;
+
+  const desiredCols = AUTO_ARRANGE_COLS_CYCLE[autoArrangeCycleIndex];
+  autoArrangeCycleIndex = (autoArrangeCycleIndex + 1) % AUTO_ARRANGE_COLS_CYCLE.length;
+
   const wrapW = Math.max(canvasWrapEl.clientWidth, DEFAULT_W);
-  const cols = Math.max(1, Math.min(panels.length, Math.floor(wrapW / DEFAULT_W) || 1));
+  const cols = Math.max(1, Math.min(panels.length, desiredCols));
   const rows = Math.ceil(panels.length / cols);
   const tileW = Math.floor(wrapW / cols);
   const wrapH = Math.max(canvasWrapEl.clientHeight, DEFAULT_H);
@@ -150,6 +161,11 @@ export function autoArrange() {
       p.h = tileH;
     });
   });
+
+  if (autoArrangeBtn) {
+    autoArrangeBtn.textContent = `自動整列 (${cols}列)`;
+    autoArrangeBtn.title = `自動整列 -- 現在${cols}列。もう一度押すと${AUTO_ARRANGE_COLS_CYCLE[autoArrangeCycleIndex]}列に切り替わります`;
+  }
 }
 
 function computeInitialPosition(index, w = DEFAULT_W, h = DEFAULT_H) {
