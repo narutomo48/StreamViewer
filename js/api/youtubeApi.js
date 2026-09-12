@@ -3,10 +3,12 @@
 // - playlistItems.list (archive) and channels.list (id resolution) work with
 //   just a free API key.
 //
-// Quota note (free tier = 10,000 units/day): subscriptions.list, channels.list
-// and playlistItems.list each cost ~1 unit, but search.list (used to check
-// whether a channel is currently live) costs 100 units per call -- so live-
-// status checks are done on demand (manual refresh), not polled automatically.
+// Quota note (free tier = 10,000 units/day): subscriptions.list, channels.list,
+// playlistItems.list and videos.list each cost ~1 unit. Live-status checks
+// used to call search.list (100 units per channel!), which made it impossible
+// to refresh more than ~90 channels/day. checkChannelLive() below instead uses
+// the "uploads playlist" trick (see uploadsPlaylistIdFor) to do the same check
+// for ~2 units/channel -- a ~50x reduction.
 
 import { getState } from "../state.js";
 import { getYoutubeAccessToken } from "../auth/googleAuth.js";
@@ -100,50 +102,56 @@ export async function fetchChannelMeta(channelIds) {
   }));
 }
 
+// Every channel has a special "uploads" playlist that YouTube maintains
+// automatically, always containing every public upload -- including an
+// in-progress livestream, which starts appearing here within moments of going
+// live. For virtually every channel today (any ID starting with "UC...") its
+// ID can be derived for free by swapping the "UC" prefix for "UU", with no
+// extra API call. Only for the rare legacy channel ID that doesn't follow
+// this format do we fall back to a channels.list call (1 unit) to look it up.
+async function uploadsPlaylistIdFor(channelId) {
+  if (channelId.startsWith("UC")) return "UU" + channelId.slice(2);
+  const chData = await apiFetch("channels", { part: "contentDetails", id: channelId });
+  return chData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads || null;
+}
+
 // Checks whether a channel currently has a live broadcast.
-// Costs 100 quota units per call (search.list) -- call sparingly / on user
-// request. A follow-up videos.list call (1 unit) grabs actualStartTime /
-// concurrentViewers so the sidebar can show elapsed time + viewer count;
-// that part is best-effort and never fails the whole lookup.
+// Uses the uploads-playlist trick above (usually free) + playlistItems.list
+// (1 unit) to find the channel's single latest video, then videos.list
+// (1 unit) to confirm it's actually live right now and grab actualStartTime /
+// concurrentViewers for the sidebar's elapsed-time / viewer-count display.
+// Total: ~2 quota units/channel (vs. 101 with the old search.list approach).
 export async function checkChannelLive(channelId) {
-  const data = await apiFetch("search", {
+  const uploadsId = await uploadsPlaylistIdFor(channelId);
+  if (!uploadsId) return null;
+
+  const plData = await apiFetch("playlistItems", {
     part: "snippet",
-    channelId,
-    eventType: "live",
-    type: "video",
+    playlistId: uploadsId,
     maxResults: 1,
   });
-  const item = data.items && data.items[0];
-  if (!item) return null;
-  const videoId = item.id.videoId;
+  const latest = plData.items && plData.items[0];
+  if (!latest) return null;
+  const videoId = latest.snippet.resourceId.videoId;
 
-  let startedAt = null;
-  let viewers = null;
-  try {
-    const vidData = await apiFetch("videos", { part: "liveStreamingDetails", id: videoId });
-    const details = vidData.items && vidData.items[0] && vidData.items[0].liveStreamingDetails;
-    if (details) {
-      startedAt = details.actualStartTime || null;
-      viewers = details.concurrentViewers != null ? Number(details.concurrentViewers) : null;
-    }
-  } catch (err) {
-    console.warn("Failed to fetch liveStreamingDetails (elapsed time / viewer count unavailable)", err);
-  }
+  const vidData = await apiFetch("videos", { part: "snippet,liveStreamingDetails", id: videoId });
+  const vidItem = vidData.items && vidData.items[0];
+  if (!vidItem || vidItem.snippet?.liveBroadcastContent !== "live") return null;
 
+  const details = vidItem.liveStreamingDetails || {};
   return {
     videoId,
-    title: item.snippet.title,
-    thumbnail: item.snippet.thumbnails?.medium?.url || "",
-    startedAt,
-    viewers,
+    title: vidItem.snippet.title,
+    thumbnail: vidItem.snippet.thumbnails?.medium?.url || latest.snippet.thumbnails?.medium?.url || "",
+    startedAt: details.actualStartTime || null,
+    viewers: details.concurrentViewers != null ? Number(details.concurrentViewers) : null,
   };
 }
 
 // Lists a channel's past uploads (used as a stand-in for "archive" -- ended
 // broadcasts show up here once they finish processing).
 export async function fetchChannelArchive(channelId, pageToken) {
-  const chData = await apiFetch("channels", { part: "contentDetails", id: channelId });
-  const uploadsId = chData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  const uploadsId = await uploadsPlaylistIdFor(channelId);
   if (!uploadsId) return { items: [], nextPageToken: null };
 
   const plData = await apiFetch("playlistItems", {
