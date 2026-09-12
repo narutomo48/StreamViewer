@@ -18,6 +18,12 @@ import { hasYoutubeApiKey, hasYoutubeClientId, hasTwitchClientId } from "./setti
 
 let favListEl, ytAuthBtn, twAuthBtn;
 
+// While refreshLiveStatus() is running, this holds the button label to show
+// (e.g. "🔄 更新中… (12/140)") so progress is visible instead of the button
+// looking exactly the same before/during/after a refresh that can take a
+// while for a large favorites list. null = idle (not refreshing).
+let refreshProgressLabel = null;
+
 export function initSidebar() {
   favListEl = qs("#favList");
   ytAuthBtn = qs("#ytAuthBtn");
@@ -265,7 +271,11 @@ function renderFavorites() {
   favListEl.innerHTML = "";
 
   const toolbar = el("div", { class: "auth-row" }, [
-    el("button", { class: "btn small", onclick: refreshLiveStatus }, "🔄 ライブ状況を更新"),
+    el(
+      "button",
+      { class: "btn small", onclick: refreshLiveStatus, disabled: !!refreshProgressLabel },
+      refreshProgressLabel || "🔄 ライブ状況を更新"
+    ),
     el("button", { class: "btn small", onclick: createGroup }, "＋ グループ"),
   ]);
   favListEl.appendChild(toolbar);
@@ -709,35 +719,52 @@ function addVideoFromArchive(fav, item) {
 }
 
 async function refreshLiveStatus() {
+  if (refreshProgressLabel) return; // already running -- ignore a double-click
   const state = getState();
   const twFavs = state.favorites.filter((f) => f.platform === "twitch");
   const ytFavs = state.favorites.filter((f) => f.platform === "youtube" && f.target.idType === "channelId");
+  const startedAt = Date.now();
 
-  if (twFavs.length && isTwitchSignedIn()) {
-    try {
-      let userIds = twFavs.map((f) => f.target.userId).filter(Boolean);
-      if (userIds.length < twFavs.length) userIds = await resolveTwitchUserIds(twFavs);
-      const liveMap = await fetchLiveStreams(userIds);
-      update((s) => {
-        for (const f of s.favorites) {
-          if (f.platform !== "twitch") continue;
-          const info = f.target.userId ? liveMap.get(f.target.userId) : null;
-          f.liveStatus = info
-            ? { live: true, title: info.title, startedAt: info.startedAt, viewers: info.viewers }
-            : { live: false };
-        }
-      });
-    } catch (err) {
-      toast(`Twitchのライブ状況取得に失敗しました: ${err.message}`, "error");
+  // Show progress immediately, even before the first network call resolves,
+  // so the button visibly changes the moment it's clicked (answers "did this
+  // actually do anything / is it instant?").
+  refreshProgressLabel = "🔄 更新中…";
+  renderFavorites();
+
+  try {
+    if (twFavs.length && isTwitchSignedIn()) {
+      try {
+        let userIds = twFavs.map((f) => f.target.userId).filter(Boolean);
+        if (userIds.length < twFavs.length) userIds = await resolveTwitchUserIds(twFavs);
+        const liveMap = await fetchLiveStreams(userIds);
+        update((s) => {
+          for (const f of s.favorites) {
+            if (f.platform !== "twitch") continue;
+            const info = f.target.userId ? liveMap.get(f.target.userId) : null;
+            f.liveStatus = info
+              ? { live: true, title: info.title, startedAt: info.startedAt, viewers: info.viewers }
+              : { live: false };
+          }
+        });
+        renderFavorites();
+      } catch (err) {
+        toast(`Twitchのライブ状況取得に失敗しました: ${err.message}`, "error");
+      }
     }
-  }
 
-  if (ytFavs.length && hasYoutubeApiKey()) {
-    let quotaExceeded = false;
-      for (const f of ytFavs) {
+    if (ytFavs.length && hasYoutubeApiKey()) {
+      let quotaExceeded = false;
+      for (let i = 0; i < ytFavs.length; i++) {
+        const f = ytFavs[i];
         if (quotaExceeded) break;
         try {
           const live = await checkChannelLive(f.target.id);
+          // Set the progress label before patchFavorite(), which re-renders
+          // the list right away -- so each channel's result (and its new
+          // position in the sorted list, if it just went live) appears one
+          // at a time as it's confirmed, instead of everything jumping at
+          // once only after the very last channel is checked.
+          refreshProgressLabel = `🔄 更新中… (${i + 1}/${ytFavs.length})`;
           patchFavorite(f.id, {
             liveStatus: live
               ? { live: true, title: live.title, videoId: live.videoId, startedAt: live.startedAt, viewers: live.viewers }
@@ -749,6 +776,8 @@ async function refreshLiveStatus() {
           // same way -- stop hammering the API and surface one clear
           // message instead of one silent failure per channel.
           if (/quota/i.test(err.message) || /\b429\b/.test(err.message)) quotaExceeded = true;
+          refreshProgressLabel = `🔄 更新中… (${i + 1}/${ytFavs.length})`;
+          renderFavorites();
         }
       }
       if (quotaExceeded) {
@@ -759,9 +788,13 @@ async function refreshLiveStatus() {
         );
       }
     }
+  } finally {
+    refreshProgressLabel = null;
+    renderFavorites();
+  }
 
-  renderFavorites();
-  toast("ライブ状況を更新しました。");
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  toast(`ライブ状況を更新しました。(${seconds}秒)`);
 }
 
 async function resolveTwitchUserIds(twFavs) {
