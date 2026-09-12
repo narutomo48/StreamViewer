@@ -733,11 +733,7 @@ async function refreshLiveStatus() {
   }
 
   if (ytFavs.length && hasYoutubeApiKey()) {
-    const proceed = window.confirm(
-      `YouTubeチャンネル${ytFavs.length}件のライブ状況を確認します。この操作はAPIクォータを多く消費します(1件あたり約100ユニット、無料枠は1日10,000ユニット)。続行しますか？`
-    );
-    if (proceed) {
-      let quotaExceeded = false;
+    let quotaExceeded = false;
       for (const f of ytFavs) {
         if (quotaExceeded) break;
         try {
@@ -763,7 +759,6 @@ async function refreshLiveStatus() {
         );
       }
     }
-  }
 
   renderFavorites();
   toast("ライブ状況を更新しました。");
