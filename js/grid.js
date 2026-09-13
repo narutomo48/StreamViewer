@@ -17,6 +17,15 @@ const MIN_W = 240;
 const MIN_H = 170;
 const GAP = 16;
 
+// Neither YouTube's nor Twitch's embedded player exposes "an ad is currently
+// playing" to embedding pages -- there is no supported way to tell a
+// pre-roll ad apart from the real content. As a practical stand-in: when a
+// panel is opened unmuted, force-mute it for this warm-up window (long
+// enough to cover most pre-roll ads) before restoring the panel's actual
+// volume/mute setting. This costs a few silent seconds of real content when
+// there was no ad, which is a much smaller annoyance than a sudden loud ad.
+const AD_GUARD_MS = 6000;
+
 let canvasEl, canvasWrapEl, emptyStateEl, autoArrangeBtn;
 
 // Auto-arrange cycles through a fixed set of column counts each time the
@@ -224,6 +233,7 @@ function updateCanvasExtent(panels) {
 
 function destroyInstance(inst) {
   inst.destroyed = true;
+  if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
   try { inst.player && inst.player.destroy(); } catch {}
   try { inst.root.remove(); } catch {}
 }
@@ -266,6 +276,9 @@ function mountPanel(panel) {
     type: "range", min: "0", max: "100", value: String(panel.volume),
     title: "音量",
     oninput: (e) => {
+      // A manual volume change means the user has already decided what they
+      // want to hear -- don't let the ad-guard timer override it later.
+      if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
       const v = Number(e.target.value);
       setPanelVolume(panel.id, v);
       inst.player && inst.player.setVolume(v);
@@ -277,6 +290,8 @@ function mountPanel(panel) {
     class: "ctrl-btn",
     title: "ミュート切替",
     onclick: () => {
+      // Same as above -- a manual mute/unmute click overrides the ad-guard timer.
+      if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
       const cur = getState().panels.find((p) => p.id === panel.id);
       const nextMuted = cur ? !cur.muted : false;
       setPanelMuted(panel.id, nextMuted);
@@ -388,9 +403,13 @@ function mountChatPanel(root, panel) {
 
 function mountPlayer(inst, panel) {
   const target = panel.target;
+  // See AD_GUARD_MS above -- force a silent start even for a panel the user
+  // wants audible, then restore its real volume/mute setting shortly after.
+  // A panel the user already muted needs no guard (it's silent either way).
+  const guardAgainstAds = !panel.muted;
   const commonOpts = {
     volume: panel.volume,
-    muted: panel.muted,
+    muted: guardAgainstAds ? true : panel.muted,
     onReady: () => {},
     onError: () => {
       if (inst.destroyed) return;
@@ -424,6 +443,14 @@ function mountPlayer(inst, panel) {
   playerPromise.then((handle) => {
     if (inst.destroyed) { try { handle.destroy(); } catch {} return; }
     inst.player = handle;
+
+    if (guardAgainstAds) {
+      inst.adGuardTimer = setTimeout(() => {
+        inst.adGuardTimer = null;
+        if (inst.destroyed) return;
+        try { handle.setVolume(panel.volume); handle.setMuted(panel.muted); } catch {}
+      }, AD_GUARD_MS);
+    }
   }).catch((err) => {
     console.warn(err);
     if (!inst.destroyed) showVideoFallback(inst, "プレイヤーの読み込みに失敗しました。");
