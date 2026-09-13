@@ -38,6 +38,12 @@ function loadState() {
     return {
       ...structuredCloneCompat(DEFAULT_STATE),
       ...parsed,
+      // The app should always launch to an empty canvas rather than
+      // auto-reopening whatever panels happened to be open last time --
+      // favorites/groups/presets/settings/auth are still restored as normal,
+      // just not the transient "what's currently on screen" layout. Load a
+      // preset (or re-add favorites) to get panels back after launch.
+      panels: [],
       settings: { ...DEFAULT_STATE.settings, ...(parsed.settings || {}) },
       auth: { ...DEFAULT_STATE.auth, ...(parsed.auth || {}) },
     };
