@@ -867,6 +867,7 @@ async function refreshLiveStatus() {
   }
   renderFavorites();
 
+  try {
     if (twFavs.length && isTwitchSignedIn()) {
       try {
         await checkTwitchLiveStatuses(prevLiveIds);
