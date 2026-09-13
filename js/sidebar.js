@@ -767,18 +767,21 @@ async function refreshLiveStatus() {
     }
 
     if (ytFavs.length && hasYoutubeApiKey()) {
+      // YouTube has no "check many channels' live status at once" endpoint --
+      // each channel needs its own couple of requests -- so instead of doing
+      // them strictly one after another (waiting out each network round trip
+      // before starting the next), run a small pool of them at the same time.
+      // This doesn't change how many API calls are made (same quota cost),
+      // it just stops waiting on network latency serially, so a large
+      // favorites list finishes in a fraction of the time.
+      const CONCURRENCY = 6;
       let quotaExceeded = false;
-      for (let i = 0; i < ytFavs.length; i++) {
-        const f = ytFavs[i];
-        if (quotaExceeded) break;
+      let completed = 0;
+      let nextIndex = 0;
+
+      const checkOne = async (f) => {
         try {
           const live = await checkChannelLive(f.target.id);
-          // Set the progress label before patchFavorite(), which re-renders
-          // the list right away -- so each channel's result (and its new
-          // position in the sorted list, if it just went live) appears one
-          // at a time as it's confirmed, instead of everything jumping at
-          // once only after the very last channel is checked.
-          refreshProgressLabel = `🔄 更新中… (${i + 1}/${ytFavs.length})`;
           patchFavorite(f.id, {
             liveStatus: live
               ? { live: true, title: live.title, videoId: live.videoId, startedAt: live.startedAt, viewers: live.viewers }
@@ -787,13 +790,28 @@ async function refreshLiveStatus() {
         } catch (err) {
           console.warn("checkChannelLive failed", err);
           // Once the daily quota is blown, every remaining call fails the
-          // same way -- stop hammering the API and surface one clear
-          // message instead of one silent failure per channel.
+          // same way -- stop starting new checks and surface one clear
+          // message instead of one silent failure per channel. Checks
+          // already in flight are left to finish rather than aborted.
           if (/quota/i.test(err.message) || /\b429\b/.test(err.message)) quotaExceeded = true;
-          refreshProgressLabel = `🔄 更新中… (${i + 1}/${ytFavs.length})`;
           renderFavorites();
         }
-      }
+        completed++;
+        refreshProgressLabel = `🔄 更新中… (${completed}/${ytFavs.length})`;
+      };
+
+      const worker = async () => {
+        while (!quotaExceeded) {
+          const i = nextIndex++;
+          if (i >= ytFavs.length) return;
+          await checkOne(ytFavs[i]);
+        }
+      };
+
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, ytFavs.length) }, worker)
+      );
+
       if (quotaExceeded) {
         toast(
           "YouTube APIの1日のクォータ上限に達したため、途中で確認を中断しました。クォータは太平洋時間の深夜(日本時間で17時頃)にリセットされます。時間をおいてもう一度お試しください。",
