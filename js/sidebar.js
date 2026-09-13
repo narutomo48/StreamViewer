@@ -16,7 +16,7 @@ import {
 } from "./api/twitchApi.js";
 import { hasYoutubeApiKey, hasYoutubeClientId, hasTwitchClientId } from "./settings.js";
 
-let favListEl, ytAuthBtn, twAuthBtn;
+let favListEl, ytAuthBtn, twAuthBtn, liveAlertBarEl;
 
 // While refreshLiveStatus() is running, this holds the button label to show
 // (e.g. "🔄 更新中… (12/140)") so progress is visible instead of the button
@@ -24,17 +24,123 @@ let favListEl, ytAuthBtn, twAuthBtn;
 // while for a large favorites list. null = idle (not refreshing).
 let refreshProgressLabel = null;
 
+// "Just went live" alert bar (below the top bar) -- channels freshly
+// detected as live, shown as dismissible chips until opened, dismissed, or
+// aged out. Twitch is checked automatically in the background (Twitch's API
+// has no meaningful quota limit); YouTube is only checked when the user
+// presses "ライブ状況を更新" (its quota is limited -- see youtubeApi.js), so a
+// newly-live YouTube channel only shows up here right after a manual refresh,
+// not continuously in real time.
+let liveAlerts = []; // [{ favId, name, avatar, platform, ts }]
+const LIVE_ALERT_MAX_AGE_MS = 20 * 60 * 1000; // stop calling it "just went live" after 20 min
+const LIVE_ALERT_MAX_COUNT = 12; // cap the bar's width if many channels go live in a burst
+const TWITCH_AUTO_POLL_MS = 2 * 60 * 1000; // free (no quota) -- can poll often
+
 export function initSidebar() {
   favListEl = qs("#favList");
   ytAuthBtn = qs("#ytAuthBtn");
   twAuthBtn = qs("#twAuthBtn");
+  liveAlertBarEl = qs("#liveAlertBar");
 
   wireTabs();
   wireAddByUrl();
   wireAddFavorite();
   wireAuthButtons();
+  startTwitchAutoPoll();
 
   renderFavorites();
+}
+
+// -------- "just went live" alert bar --------
+
+function pushLiveAlert(entry) {
+  liveAlerts = liveAlerts.filter((a) => a.favId !== entry.favId); // no duplicate chip for the same channel
+  liveAlerts.push({ ...entry, ts: Date.now() });
+  if (liveAlerts.length > LIVE_ALERT_MAX_COUNT) liveAlerts.shift(); // drop the oldest if a burst goes live at once
+  renderLiveAlertBar();
+}
+
+function dismissLiveAlert(favId) {
+  liveAlerts = liveAlerts.filter((a) => a.favId !== favId);
+  renderLiveAlertBar();
+}
+
+function pruneStaleLiveAlerts() {
+  const cutoff = Date.now() - LIVE_ALERT_MAX_AGE_MS;
+  const before = liveAlerts.length;
+  liveAlerts = liveAlerts.filter((a) => a.ts >= cutoff);
+  if (liveAlerts.length !== before) renderLiveAlertBar();
+}
+
+function renderLiveAlertBar() {
+  if (!liveAlertBarEl) return;
+  liveAlertBarEl.innerHTML = "";
+  liveAlertBarEl.hidden = liveAlerts.length === 0;
+  for (const alert of liveAlerts) {
+    const chip = el("div", { class: "live-alert-chip", title: `${alert.name} が配信を開始しました。クリックで開きます。` }, [
+      alert.avatar
+        ? el("img", { class: "avatar", src: alert.avatar, alt: "" })
+        : el("span", { class: `platform-dot ${alert.platform}` }),
+      el("span", { class: "name" }, alert.name),
+      el("span", { class: "live-tag" }, "LIVE"),
+      el("button", {
+        class: "dismiss",
+        title: "閉じる",
+        onclick: (e) => { e.stopPropagation(); dismissLiveAlert(alert.favId); },
+      }, "✕"),
+    ]);
+    chip.addEventListener("click", () => {
+      const fav = getState().favorites.find((f) => f.id === alert.favId);
+      dismissLiveAlert(alert.favId);
+      if (fav) openFavorite(fav);
+    });
+    liveAlertBarEl.appendChild(chip);
+  }
+}
+
+// Twitch has no meaningful daily quota (unlike YouTube -- see youtubeApi.js),
+// so its live status can be polled automatically and for free. Only runs
+// while the tab is actually visible, to avoid pointless background work.
+function startTwitchAutoPoll() {
+  const poll = () => {
+    if (document.hidden) return;
+    checkTwitchLiveStatuses().catch((err) => console.warn("Twitchのバックグラウンド確認に失敗しました", err));
+  };
+  setInterval(poll, TWITCH_AUTO_POLL_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+  setInterval(pruneStaleLiveAlerts, 60 * 1000);
+  setTimeout(poll, 5000); // one initial check shortly after load
+}
+
+// Shared by both the manual "ライブ状況を更新" button and the automatic
+// background poll above. prevLiveIds (a Set of favorite ids already known
+// live) lets the caller control what counts as "newly" live for the alert
+// bar; if omitted, it's computed from the current state (the normal case for
+// a standalone background poll -- refreshLiveStatus() passes its own
+// snapshot instead, taken before it resets everything to "checking...").
+async function checkTwitchLiveStatuses(prevLiveIds) {
+  const state = getState();
+  const twFavs = state.favorites.filter((f) => f.platform === "twitch");
+  if (!twFavs.length || !isTwitchSignedIn()) return;
+  const wasLiveIds = prevLiveIds || new Set(twFavs.filter((f) => f.liveStatus && f.liveStatus.live).map((f) => f.id));
+
+  let userIds = twFavs.map((f) => f.target.userId).filter(Boolean);
+  if (userIds.length < twFavs.length) userIds = await resolveTwitchUserIds(twFavs);
+  const liveMap = await fetchLiveStreams(userIds);
+
+  const newlyLive = [];
+  update((s) => {
+    for (const f of s.favorites) {
+      if (f.platform !== "twitch") continue;
+      const info = f.target.userId ? liveMap.get(f.target.userId) : null;
+      f.liveStatus = info
+        ? { live: true, title: info.title, startedAt: info.startedAt, viewers: info.viewers }
+        : { live: false };
+      if (info && !wasLiveIds.has(f.id)) newlyLive.push({ favId: f.id, name: f.name, avatar: f.avatar, platform: "twitch" });
+    }
+  });
+  renderFavorites();
+  newlyLive.forEach(pushLiveAlert);
 }
 
 // -------- tabs --------
@@ -735,6 +841,12 @@ async function refreshLiveStatus() {
   const ytFavs = state.favorites.filter((f) => f.platform === "youtube" && f.target.idType === "channelId");
   const startedAt = Date.now();
 
+  // Snapshot of who was already confirmed live *before* this refresh resets
+  // everything below -- needed so the "just went live" alert bar only fires
+  // for channels that are genuinely newly live, not every already-live
+  // channel on every single manual refresh.
+  const prevLiveIds = new Set(state.favorites.filter((f) => f.liveStatus && f.liveStatus.live).map((f) => f.id));
+
   // Show progress immediately, even before the first network call resolves,
   // so the button visibly changes the moment it's clicked (answers "did this
   // actually do anything / is it instant?").
@@ -755,22 +867,9 @@ async function refreshLiveStatus() {
   }
   renderFavorites();
 
-  try {
     if (twFavs.length && isTwitchSignedIn()) {
       try {
-        let userIds = twFavs.map((f) => f.target.userId).filter(Boolean);
-        if (userIds.length < twFavs.length) userIds = await resolveTwitchUserIds(twFavs);
-        const liveMap = await fetchLiveStreams(userIds);
-        update((s) => {
-          for (const f of s.favorites) {
-            if (f.platform !== "twitch") continue;
-            const info = f.target.userId ? liveMap.get(f.target.userId) : null;
-            f.liveStatus = info
-              ? { live: true, title: info.title, startedAt: info.startedAt, viewers: info.viewers }
-              : { live: false };
-          }
-        });
-        renderFavorites();
+        await checkTwitchLiveStatuses(prevLiveIds);
       } catch (err) {
         toast(`Twitchのライブ状況取得に失敗しました: ${err.message}`, "error");
       }
@@ -797,6 +896,9 @@ async function refreshLiveStatus() {
               ? { live: true, title: live.title, videoId: live.videoId, startedAt: live.startedAt, viewers: live.viewers }
               : { live: false },
           });
+          if (live && !prevLiveIds.has(f.id)) {
+            pushLiveAlert({ favId: f.id, name: f.name, avatar: f.avatar, platform: "youtube" });
+          }
         } catch (err) {
           console.warn("checkChannelLive failed", err);
           // Once the daily quota is blown, every remaining call fails the
