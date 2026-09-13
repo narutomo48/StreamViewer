@@ -580,8 +580,18 @@ function buildFavoriteCard(fav) {
       ? el("img", { class: "avatar", src: fav.avatar, alt: "" })
       : el("span", { class: `platform-dot ${fav.platform}` }),
     el("div", { class: "meta" }, [
-      el("div", { class: "name" }, fav.name || fallbackLabel(fav.target)),
-      el("div", { class: "sub" }, (fav.liveStatus && fav.liveStatus.live && fav.liveStatus.title) || (fav.platform === "youtube" ? "YouTube" : "Twitch")),
+      el("div", { class: "name", title: fav.name || fallbackLabel(fav.target) }, fav.name || fallbackLabel(fav.target)),
+      el(
+        "div",
+        {
+          class: "sub",
+          // Native browser tooltip: shows the full, untruncated stream title
+          // on hover, since the "sub" line itself is clipped with an ellipsis
+          // when the title is long (CSS in style.css).
+          title: (fav.liveStatus && fav.liveStatus.live && fav.liveStatus.title) || (fav.platform === "youtube" ? "YouTube" : "Twitch"),
+        },
+        (fav.liveStatus && fav.liveStatus.live && fav.liveStatus.title) || (fav.platform === "youtube" ? "YouTube" : "Twitch")
+      ),
     ]),
     badge,
     liveMetaInline,
