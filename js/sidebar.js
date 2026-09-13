@@ -729,6 +729,20 @@ async function refreshLiveStatus() {
   // so the button visibly changes the moment it's clicked (answers "did this
   // actually do anything / is it instant?").
   refreshProgressLabel = "🔄 更新中…";
+
+  // Clear every live badge that's about to be re-checked right away, so a
+  // channel whose stream actually ended since the last refresh doesn't keep
+  // showing "LIVE" for however long it takes this refresh to reach it -- it
+  // only shows live again once freshly confirmed by this refresh.
+  const toReset = new Set([
+    ...(twFavs.length && isTwitchSignedIn() ? twFavs : []),
+    ...(ytFavs.length && hasYoutubeApiKey() ? ytFavs : []),
+  ]);
+  if (toReset.size) {
+    update((s) => {
+      for (const f of s.favorites) if (toReset.has(f)) f.liveStatus = { live: false };
+    });
+  }
   renderFavorites();
 
   try {
