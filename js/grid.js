@@ -42,7 +42,6 @@ export function initGrid() {
   autoArrangeBtn = document.getElementById("autoArrangeBtn");
 
   subscribe((state) => reconcile(state));
-  window.addEventListener("resize", () => applyResponsiveMode());
   reconcile(getState());
 }
 
@@ -211,13 +210,7 @@ function reconcile(state) {
     }
   }
 
-  applyResponsiveMode();
   updateCanvasExtent(panels);
-}
-
-function applyResponsiveMode() {
-  if (!canvasEl) return;
-  canvasEl.classList.toggle("mobile-stack", window.innerWidth <= 820);
 }
 
 function updateCanvasExtent(panels) {
