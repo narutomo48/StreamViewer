@@ -279,6 +279,9 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
 .group-header .group-drag-handle {
   flex: 0 0 auto; color: var(--text-dim); font-size: 12px; letter-spacing: -1px;
   cursor: grab; padding: 0 2px; line-height: 1;
+  /* Without this, a touch-drag on the handle can get hijacked by the
+     sidebar's own scrolling before our pointermove handler ever sees it. */
+  touch-action: none;
 }
 .group-header .group-drag-handle:active { cursor: grabbing; }
 .group-section.dragging { opacity: 0.45; }
@@ -442,14 +445,12 @@ legend { padding: 0 6px; font-size: 12px; color: var(--text-dim); }
   .presetbar select { max-width: 90px; }
   #brand { font-size: 14px; }
 
-  /* stack panels full-width on small screens regardless of stored x/y */
-  .canvas.mobile-stack .stream-panel {
-    position: relative !important;
-    left: auto !important; top: auto !important;
-    width: 100% !important;
-    height: 260px !important;
-    margin-bottom: 10px;
-  }
-  .canvas.mobile-stack { display: flex; flex-direction: column; padding: 10px; }
+  /* Panels used to be force-stacked full-width here (position/size pinned
+     with !important), which incidentally made it impossible to drag-move or
+     drag-resize a panel from a phone -- CSS was overriding whatever the
+     pointer-drag code in grid.js was doing. Panels now keep the same
+     freely-positioned/resizable behavior as desktop; #canvasWrap already
+     scrolls (overflow: auto) so a panel placed outside the visible area is
+     still reachable by scrolling/panning. */
   .panel-chat { flex-basis: 50%; max-width: 60%; }
 }
