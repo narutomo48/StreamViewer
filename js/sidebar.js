@@ -65,6 +65,15 @@ function dismissLiveAlert(favId) {
   renderLiveAlertBar();
 }
 
+// Pressing "ライブ状況を更新" clears the whole bar (see refreshLiveStatus) --
+// the bar is only ever for "someone went live since I last checked", and a
+// manual refresh IS "checking now", so nothing in it is still meaningful.
+function clearAllLiveAlerts() {
+  if (!liveAlerts.length) return;
+  liveAlerts = [];
+  renderLiveAlertBar();
+}
+
 function pruneStaleLiveAlerts() {
   const cutoff = Date.now() - LIVE_ALERT_MAX_AGE_MS;
   const before = liveAlerts.length;
@@ -109,20 +118,30 @@ function startTwitchAutoPoll() {
   setInterval(poll, TWITCH_AUTO_POLL_MS);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   setInterval(pruneStaleLiveAlerts, 60 * 1000);
-  setTimeout(poll, 5000); // one initial check shortly after load
+  // Initial sync shortly after load -- silent (no alert chips). This just
+  // establishes the starting "who's live" baseline (everyone starts "not
+  // known live" on launch -- see state.js), it isn't "someone just went
+  // live", so it shouldn't be announced as one.
+  setTimeout(() => {
+    checkTwitchLiveStatuses({ silent: true }).catch((err) => console.warn("Twitchの初期確認に失敗しました", err));
+  }, 5000);
 }
 
 // Shared by both the manual "ライブ状況を更新" button and the automatic
-// background poll above. prevLiveIds (a Set of favorite ids already known
-// live) lets the caller control what counts as "newly" live for the alert
-// bar; if omitted, it's computed from the current state (the normal case for
-// a standalone background poll -- refreshLiveStatus() passes its own
-// snapshot instead, taken before it resets everything to "checking...").
-async function checkTwitchLiveStatuses(prevLiveIds) {
+// background poll above.
+//
+// silent: true means "update the live badges, but don't add anything to the
+// alert bar" -- used for the manual refresh button (which is a deliberate
+// "check now", not a "someone just went live" event -- see refreshLiveStatus)
+// and for the very first sync after load. The background poll's own regular
+// ticks call this WITHOUT silent, so a channel that goes live sometime after
+// the last check/refresh -- and is caught by the next automatic poll -- is
+// what actually shows up in the alert bar.
+async function checkTwitchLiveStatuses({ silent = false } = {}) {
   const state = getState();
   const twFavs = state.favorites.filter((f) => f.platform === "twitch");
   if (!twFavs.length || !isTwitchSignedIn()) return;
-  const wasLiveIds = prevLiveIds || new Set(twFavs.filter((f) => f.liveStatus && f.liveStatus.live).map((f) => f.id));
+  const wasLiveIds = new Set(twFavs.filter((f) => f.liveStatus && f.liveStatus.live).map((f) => f.id));
 
   let userIds = twFavs.map((f) => f.target.userId).filter(Boolean);
   if (userIds.length < twFavs.length) userIds = await resolveTwitchUserIds(twFavs);
@@ -140,7 +159,7 @@ async function checkTwitchLiveStatuses(prevLiveIds) {
     }
   });
   renderFavorites();
-  newlyLive.forEach(pushLiveAlert);
+  if (!silent) newlyLive.forEach(pushLiveAlert);
 }
 
 // -------- tabs --------
@@ -447,7 +466,7 @@ function buildGroupSection(group, members, rawMembers = members) {
   const isLive = rawMembers.some((f) => f.liveStatus && f.liveStatus.live);
   const collapsed = !!group.collapsed;
 
-  const dragHandle = el("span", { class: "group-drag-handle", draggable: "true", title: "ドラッグで並べ替え" }, "⋮⋮");
+  const dragHandle = el("span", { class: "group-drag-handle", title: "ドラッグで並べ替え" }, "⋮⋮");
 
   const header = el("div", { class: `group-header${isLive ? " live" : ""}` }, [
     dragHandle,
@@ -469,33 +488,45 @@ function buildGroupSection(group, members, rawMembers = members) {
   body.hidden = collapsed;
   for (const fav of members) body.appendChild(buildFavoriteCard(fav));
 
-  const section = el("div", { class: "group-section" }, [header, body]);
+    const section = el("div", { class: "group-section" }, [header, body]);
+  section.dataset.groupId = group.id;
 
   // Drag-and-drop reordering of groups: the ⋮⋮ handle is the only draggable
   // part (so dragging never fights with clicking a card, a button, or
-  // collapsing the group), and any point over the section accepts the drop.
-  dragHandle.addEventListener("dragstart", (e) => {
+  // collapsing the group), and any point over another section accepts the
+  // drop. Uses Pointer Events rather than native HTML5 drag-and-drop
+  // (draggable/dragstart/dragover/drop) because that API has no touch
+  // equivalent -- it simply does not fire on mobile browsers, which is why
+  // this couldn't be reordered at all from a phone before.
+  dragHandle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.setData("text/plain", group.id);
-    e.dataTransfer.effectAllowed = "move";
+    try { dragHandle.setPointerCapture(e.pointerId); } catch {}
     section.classList.add("dragging");
-  });
-  dragHandle.addEventListener("dragend", (e) => {
-    e.stopPropagation();
-    section.classList.remove("dragging");
-  });
-  section.addEventListener("dragover", (e) => {
-    if (!e.dataTransfer.types.includes("text/plain")) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    section.classList.add("drag-over");
-  });
-  section.addEventListener("dragleave", () => section.classList.remove("drag-over"));
-  section.addEventListener("drop", (e) => {
-    e.preventDefault();
-    section.classList.remove("drag-over");
-    const draggedId = e.dataTransfer.getData("text/plain");
-    if (draggedId) reorderGroups(draggedId, group.id);
+    let overSection = null;
+
+    const onMove = (ev) => {
+      const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+      const hovered = hit && hit.closest(".group-section");
+      const next = hovered && hovered !== section ? hovered : null;
+      if (overSection && overSection !== next) overSection.classList.remove("drag-over");
+      overSection = next;
+      if (overSection) overSection.classList.add("drag-over");
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      section.classList.remove("dragging");
+      if (overSection) {
+        overSection.classList.remove("drag-over");
+        const targetId = overSection.dataset.groupId;
+        if (targetId) reorderGroups(group.id, targetId);
+      }
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   });
 
   return section;
@@ -841,11 +872,11 @@ async function refreshLiveStatus() {
   const ytFavs = state.favorites.filter((f) => f.platform === "youtube" && f.target.idType === "channelId");
   const startedAt = Date.now();
 
-  // Snapshot of who was already confirmed live *before* this refresh resets
-  // everything below -- needed so the "just went live" alert bar only fires
-  // for channels that are genuinely newly live, not every already-live
-  // channel on every single manual refresh.
-  const prevLiveIds = new Set(state.favorites.filter((f) => f.liveStatus && f.liveStatus.live).map((f) => f.id));
+  // A manual refresh is a deliberate "check now", not a "someone just went
+  // live" event -- so it clears the alert bar rather than adding to it (see
+  // checkTwitchLiveStatuses's silent option below). Only the automatic
+  // background poll announces newly-live channels going forward from here.
+  clearAllLiveAlerts();
 
   // Show progress immediately, even before the first network call resolves,
   // so the button visibly changes the moment it's clicked (answers "did this
@@ -870,7 +901,7 @@ async function refreshLiveStatus() {
   try {
     if (twFavs.length && isTwitchSignedIn()) {
       try {
-        await checkTwitchLiveStatuses(prevLiveIds);
+        await checkTwitchLiveStatuses({ silent: true });
       } catch (err) {
         toast(`Twitchのライブ状況取得に失敗しました: ${err.message}`, "error");
       }
@@ -897,9 +928,10 @@ async function refreshLiveStatus() {
               ? { live: true, title: live.title, videoId: live.videoId, startedAt: live.startedAt, viewers: live.viewers }
               : { live: false },
           });
-          if (live && !prevLiveIds.has(f.id)) {
-            pushLiveAlert({ favId: f.id, name: f.name, avatar: f.avatar, platform: "youtube" });
-          }
+          // No pushLiveAlert here on purpose -- a manual refresh clears the
+          // alert bar (see clearAllLiveAlerts() above) rather than adding to
+          // it; the bar is only for something noticed automatically after
+          // the last check, and YouTube has no automatic background check.
         } catch (err) {
           console.warn("checkChannelLive failed", err);
           // Once the daily quota is blown, every remaining call fails the
