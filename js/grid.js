@@ -356,9 +356,6 @@ function mountPanel(panel) {
 // draggable/resizable/closable like any panel, but no video player, volume
 // controls, or chat-toggle (it IS the chat).
 function mountChatPanel(root, panel) {
-  const linkBtn = el("a", {
-    class: "ctrl-btn", href: buildExternalUrl(panel.target), target: "_blank", rel: "noopener noreferrer", title: "外部で開く",
-  }, "↗");
   const closeBtn = el("button", {
     class: "ctrl-btn", title: "閉じる",
     onclick: () => removePanel(panel.id),
@@ -367,7 +364,6 @@ function mountChatPanel(root, panel) {
   const header = el("div", { class: "panel-header" }, [
     platformDot(panel.target.platform),
     titleEl,
-    linkBtn,
     closeBtn,
   ]);
 
