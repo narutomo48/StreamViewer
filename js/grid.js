@@ -210,7 +210,25 @@ function reconcile(state) {
     }
   }
 
+  syncStackOrder(panels);
   updateCanvasExtent(panels);
+}
+
+// panel.z (from nextZ() in state.js) is a counter that only ever grows, and
+// is persisted across sessions -- with enough use it eventually exceeds
+// fixed z-indexes used elsewhere in the UI (e.g. the mobile sidebar drawer,
+// which needs to stay above panels at z-index:120 in style.css), letting a
+// panel render on top of the sidebar instead of staying behind it. panel.z
+// itself is only used here for relative order (who's "more front" than
+// whom); what actually gets written to the DOM is a normalized index (1..N
+// among the panels currently open), which can never exceed the panel count
+// and so always stays safely below any fixed piece of UI chrome.
+function syncStackOrder(panels) {
+  const ordered = [...panels].sort((a, b) => (a.z || 0) - (b.z || 0));
+  ordered.forEach((panel, i) => {
+    const inst = instances.get(panel.id);
+    if (inst) inst.root.style.zIndex = String(i + 1);
+  });
 }
 
 function updateCanvasExtent(panels) {
@@ -505,8 +523,13 @@ function bringToFront(panelId) {
     const p = s.panels.find((x) => x.id === panelId);
     if (p) p.z = z;
   }, { notify: false });
-  const inst = instances.get(panelId);
-  if (inst) inst.root.style.zIndex = String(z);
+  // { notify: false } above skips the full subscribe-driven re-render (so
+  // dragging doesn't fight itself), but the on-screen stacking order still
+  // needs updating right away -- through the same normalization reconcile()
+  // uses (see syncStackOrder), not the raw counter value, so a panel brought
+  // to front here can never end up with a z-index high enough to cover
+  // fixed UI chrome like the mobile sidebar drawer (z-index:120).
+  syncStackOrder(getState().panels);
 }
 
 function attachDrag(root, handle, panelId) {
