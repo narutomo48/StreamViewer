@@ -305,10 +305,6 @@ function mountPanel(panel) {
     onclick: () => detachChat(panel.id),
   }, "🗗");
 
-  const linkBtn = el("a", {
-    class: "ctrl-btn", href: buildExternalUrl(panel.target), target: "_blank", rel: "noopener noreferrer", title: "外部で開く",
-  }, "↗");
-
   const closeBtn = el("button", {
     class: "ctrl-btn", title: "閉じる",
     onclick: () => removePanel(panel.id),
@@ -322,7 +318,6 @@ function mountPanel(panel) {
     el("span", { class: "volume-wrap" }, [muteBtn, volumeInput]),
     chatBtn,
     detachChatBtn,
-    linkBtn,
     closeBtn,
   ]);
 
