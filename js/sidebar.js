@@ -933,11 +933,15 @@ async function refreshLiveStatus() {
       // YouTube has no "check many channels' live status at once" endpoint --
       // each channel needs its own couple of requests -- so instead of doing
       // them strictly one after another (waiting out each network round trip
-      // before starting the next), run a small pool of them at the same time.
+      // before starting the next), run a pool of them at the same time.
       // This doesn't change how many API calls are made (same quota cost),
       // it just stops waiting on network latency serially, so a large
-      // favorites list finishes in a fraction of the time.
-      const CONCURRENCY = 6;
+      // favorites list finishes in a fraction of the time. Requests go to
+      // googleapis.com over HTTP/2, which multiplexes many concurrent
+      // streams over one connection -- unlike old HTTP/1.1's ~6-per-host
+      // cap, so there's no real browser-side ceiling here; 16 is still well
+      // under any YouTube Data API per-user rate limit, just faster than 6.
+      const CONCURRENCY = 16;
       let quotaExceeded = false;
       let completed = 0;
       let nextIndex = 0;
