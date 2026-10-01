@@ -14,6 +14,20 @@ export function isTwitchSignedIn() {
   return !!(auth && auth.accessToken && auth.expiresAt > Date.now());
 }
 
+// Twitch's implicit-grant access token expires after a few hours (see
+// handleTwitchRedirect below) and this app has no refresh-token flow to
+// silently renew it -- the stored auth record just sits there, now stale,
+// until the user signs in again. isTwitchSignedIn() already goes false the
+// moment that happens, but callers that only check isTwitchSignedIn() can't
+// tell "expired, used to be signed in" apart from "never signed in", which
+// matters for giving the user a useful message instead of silently doing
+// nothing. True only when there IS a stored auth record whose expiresAt has
+// passed -- never true for someone who hasn't signed in at all.
+export function isTwitchTokenExpired() {
+  const auth = getState().auth.twitch;
+  return !!(auth && auth.accessToken && auth.expiresAt <= Date.now());
+}
+
 export function getTwitchAccessToken() {
   const auth = getState().auth.twitch;
   if (auth && auth.accessToken && auth.expiresAt > Date.now()) return auth.accessToken;

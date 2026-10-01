@@ -169,10 +169,12 @@ function reconcile(state) {
   canvasEl.classList.toggle("has-panels", panels.length > 0);
 
   const liveIds = new Set(panels.map((p) => p.id));
+  let anyRemoved = false;
   for (const [id, inst] of instances) {
     if (!liveIds.has(id)) {
       destroyInstance(inst);
       instances.delete(id);
+      anyRemoved = true;
     }
   }
 
@@ -186,8 +188,31 @@ function reconcile(state) {
     }
   }
 
+  // Closing one panel can occasionally knock the audio out of OTHER still-
+  // open panels until THEY are closed and reopened -- removing an iframe
+  // from the page seems to sometimes disturb sibling iframes' internal audio
+  // state via the browser/embed APIs, not anything this app's own JS
+  // controls directly (other multiviewer tools built on the same embeds hit
+  // this too). There's no reliable way to detect that a sibling player went
+  // silent, but re-asserting every remaining player's volume/mute right
+  // after a removal is a cheap, harmless nudge that can re-engage a player
+  // whose audio got stuck, without the user having to manually close and
+  // reopen it.
+  if (anyRemoved) reassertPlayerAudio(panels);
+
   applyResponsiveMode();
   updateCanvasExtent(panels);
+}
+
+function reassertPlayerAudio(panels) {
+  for (const panel of panels) {
+    const inst = instances.get(panel.id);
+    if (!inst || inst.isChatOnly || !inst.player) continue;
+    try {
+      inst.player.setVolume(panel.volume);
+      inst.player.setMuted(!!panel.muted);
+    } catch {}
+  }
 }
 
 function applyResponsiveMode() {

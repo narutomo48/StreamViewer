@@ -6,7 +6,7 @@ import {
   isYoutubeSignedIn, signInYoutube, signOutYoutube,
 } from "./auth/googleAuth.js";
 import {
-  isTwitchSignedIn, signInTwitch, signOutTwitch,
+  isTwitchSignedIn, isTwitchTokenExpired, signInTwitch, signOutTwitch,
 } from "./auth/twitchAuth.js";
 import {
   fetchMySubscriptions, resolveChannelId, fetchChannelMeta, checkChannelLive, fetchChannelArchive as fetchYtArchive,
@@ -730,6 +730,18 @@ async function refreshLiveStatus() {
     } catch (err) {
       toast(`Twitchのライブ状況取得に失敗しました: ${err.message}`, "error");
     }
+  } else if (twFavs.length && isTwitchTokenExpired()) {
+    // isTwitchSignedIn() is false here specifically because the stored
+    // token expired (not because the user never logged in -- see
+    // isTwitchTokenExpired() in twitchAuth.js). The "Twitch: ログアウト"
+    // sidebar button was only ever set once, when it was still valid, and
+    // nothing re-checked it since, so it kept claiming "logged in" after the
+    // token had quietly died. A manual refresh is exactly the moment the
+    // user is looking at this list expecting fresh data, so fix the button
+    // and say why Twitch didn't update instead of silently doing nothing
+    // (which otherwise looks identical to the whole feature being broken).
+    refreshAuthButtons();
+    toast("Twitchのログインが期限切れのため、ライブ状況を更新できませんでした。再度「Twitchでログイン」をお試しください。", "error", 9000);
   }
 
   if (ytFavs.length && hasYoutubeApiKey()) {
