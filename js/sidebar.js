@@ -16,150 +16,19 @@ import {
 } from "./api/twitchApi.js";
 import { hasYoutubeApiKey, hasYoutubeClientId, hasTwitchClientId } from "./settings.js";
 
-let favListEl, ytAuthBtn, twAuthBtn, liveAlertBarEl;
-
-// While refreshLiveStatus() is running, this holds the button label to show
-// (e.g. "🔄 更新中… (12/140)") so progress is visible instead of the button
-// looking exactly the same before/during/after a refresh that can take a
-// while for a large favorites list. null = idle (not refreshing).
-let refreshProgressLabel = null;
-
-// "Just went live" alert bar (below the top bar) -- channels freshly
-// detected as live, shown as dismissible chips until opened, dismissed, or
-// aged out. Twitch is checked automatically in the background (Twitch's API
-// has no meaningful quota limit); YouTube is only checked when the user
-// presses "ライブ状況を更新" (its quota is limited -- see youtubeApi.js), so a
-// newly-live YouTube channel only shows up here right after a manual refresh,
-// not continuously in real time.
-let liveAlerts = []; // [{ favId, name, avatar, platform, ts }]
-const LIVE_ALERT_MAX_AGE_MS = 20 * 60 * 1000; // stop calling it "just went live" after 20 min
-const LIVE_ALERT_MAX_COUNT = 12; // cap the bar's width if many channels go live in a burst
-const TWITCH_AUTO_POLL_MS = 2 * 60 * 1000; // free (no quota) -- can poll often
+let favListEl, ytAuthBtn, twAuthBtn;
 
 export function initSidebar() {
   favListEl = qs("#favList");
   ytAuthBtn = qs("#ytAuthBtn");
   twAuthBtn = qs("#twAuthBtn");
-  liveAlertBarEl = qs("#liveAlertBar");
 
   wireTabs();
   wireAddByUrl();
   wireAddFavorite();
   wireAuthButtons();
-  startTwitchAutoPoll();
 
   renderFavorites();
-}
-
-// -------- "just went live" alert bar --------
-
-function pushLiveAlert(entry) {
-  liveAlerts = liveAlerts.filter((a) => a.favId !== entry.favId); // no duplicate chip for the same channel
-  liveAlerts.push({ ...entry, ts: Date.now() });
-  if (liveAlerts.length > LIVE_ALERT_MAX_COUNT) liveAlerts.shift(); // drop the oldest if a burst goes live at once
-  renderLiveAlertBar();
-}
-
-function dismissLiveAlert(favId) {
-  liveAlerts = liveAlerts.filter((a) => a.favId !== favId);
-  renderLiveAlertBar();
-}
-
-// Pressing "ライブ状況を更新" clears the whole bar (see refreshLiveStatus) --
-// the bar is only ever for "someone went live since I last checked", and a
-// manual refresh IS "checking now", so nothing in it is still meaningful.
-function clearAllLiveAlerts() {
-  if (!liveAlerts.length) return;
-  liveAlerts = [];
-  renderLiveAlertBar();
-}
-
-function pruneStaleLiveAlerts() {
-  const cutoff = Date.now() - LIVE_ALERT_MAX_AGE_MS;
-  const before = liveAlerts.length;
-  liveAlerts = liveAlerts.filter((a) => a.ts >= cutoff);
-  if (liveAlerts.length !== before) renderLiveAlertBar();
-}
-
-function renderLiveAlertBar() {
-  if (!liveAlertBarEl) return;
-  liveAlertBarEl.innerHTML = "";
-  liveAlertBarEl.hidden = liveAlerts.length === 0;
-  for (const alert of liveAlerts) {
-    const chip = el("div", { class: "live-alert-chip", title: `${alert.name} が配信を開始しました。クリックで開きます。` }, [
-      alert.avatar
-        ? el("img", { class: "avatar", src: alert.avatar, alt: "" })
-        : el("span", { class: `platform-dot ${alert.platform}` }),
-      el("span", { class: "name" }, alert.name),
-      el("span", { class: "live-tag" }, "LIVE"),
-      el("button", {
-        class: "dismiss",
-        title: "閉じる",
-        onclick: (e) => { e.stopPropagation(); dismissLiveAlert(alert.favId); },
-      }, "✕"),
-    ]);
-    chip.addEventListener("click", () => {
-      const fav = getState().favorites.find((f) => f.id === alert.favId);
-      dismissLiveAlert(alert.favId);
-      if (fav) openFavorite(fav);
-    });
-    liveAlertBarEl.appendChild(chip);
-  }
-}
-
-// Twitch has no meaningful daily quota (unlike YouTube -- see youtubeApi.js),
-// so its live status can be polled automatically and for free. Only runs
-// while the tab is actually visible, to avoid pointless background work.
-function startTwitchAutoPoll() {
-  const poll = () => {
-    if (document.hidden) return;
-    checkTwitchLiveStatuses().catch((err) => console.warn("Twitchのバックグラウンド確認に失敗しました", err));
-  };
-  setInterval(poll, TWITCH_AUTO_POLL_MS);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
-  setInterval(pruneStaleLiveAlerts, 60 * 1000);
-  // Initial sync shortly after load -- silent (no alert chips). This just
-  // establishes the starting "who's live" baseline (everyone starts "not
-  // known live" on launch -- see state.js), it isn't "someone just went
-  // live", so it shouldn't be announced as one.
-  setTimeout(() => {
-    checkTwitchLiveStatuses({ silent: true }).catch((err) => console.warn("Twitchの初期確認に失敗しました", err));
-  }, 5000);
-}
-
-// Shared by both the manual "ライブ状況を更新" button and the automatic
-// background poll above.
-//
-// silent: true means "update the live badges, but don't add anything to the
-// alert bar" -- used for the manual refresh button (which is a deliberate
-// "check now", not a "someone just went live" event -- see refreshLiveStatus)
-// and for the very first sync after load. The background poll's own regular
-// ticks call this WITHOUT silent, so a channel that goes live sometime after
-// the last check/refresh -- and is caught by the next automatic poll -- is
-// what actually shows up in the alert bar.
-async function checkTwitchLiveStatuses({ silent = false } = {}) {
-  const state = getState();
-  const twFavs = state.favorites.filter((f) => f.platform === "twitch");
-  if (!twFavs.length || !isTwitchSignedIn()) return;
-  const wasLiveIds = new Set(twFavs.filter((f) => f.liveStatus && f.liveStatus.live).map((f) => f.id));
-
-  let userIds = twFavs.map((f) => f.target.userId).filter(Boolean);
-  if (userIds.length < twFavs.length) userIds = await resolveTwitchUserIds(twFavs);
-  const liveMap = await fetchLiveStreams(userIds);
-
-  const newlyLive = [];
-  update((s) => {
-    for (const f of s.favorites) {
-      if (f.platform !== "twitch") continue;
-      const info = f.target.userId ? liveMap.get(f.target.userId) : null;
-      f.liveStatus = info
-        ? { live: true, title: info.title, startedAt: info.startedAt, viewers: info.viewers }
-        : { live: false };
-      if (info && !wasLiveIds.has(f.id)) newlyLive.push({ favId: f.id, name: f.name, avatar: f.avatar, platform: "twitch" });
-    }
-  });
-  renderFavorites();
-  if (!silent) newlyLive.forEach(pushLiveAlert);
 }
 
 // -------- tabs --------
@@ -396,11 +265,7 @@ function renderFavorites() {
   favListEl.innerHTML = "";
 
   const toolbar = el("div", { class: "auth-row" }, [
-    el(
-      "button",
-      { class: "btn small", onclick: refreshLiveStatus, disabled: !!refreshProgressLabel },
-      refreshProgressLabel || "🔄 ライブ状況を更新"
-    ),
+    el("button", { class: "btn small", onclick: refreshLiveStatus }, "🔄 ライブ状況を更新"),
     el("button", { class: "btn small", onclick: createGroup }, "＋ グループ"),
   ]);
   favListEl.appendChild(toolbar);
@@ -466,7 +331,7 @@ function buildGroupSection(group, members, rawMembers = members) {
   const isLive = rawMembers.some((f) => f.liveStatus && f.liveStatus.live);
   const collapsed = !!group.collapsed;
 
-  const dragHandle = el("span", { class: "group-drag-handle", title: "ドラッグで並べ替え" }, "⋮⋮");
+  const dragHandle = el("span", { class: "group-drag-handle", draggable: "true", title: "ドラッグで並べ替え" }, "⋮⋮");
 
   const header = el("div", { class: `group-header${isLive ? " live" : ""}` }, [
     dragHandle,
@@ -488,45 +353,33 @@ function buildGroupSection(group, members, rawMembers = members) {
   body.hidden = collapsed;
   for (const fav of members) body.appendChild(buildFavoriteCard(fav));
 
-    const section = el("div", { class: "group-section" }, [header, body]);
-  section.dataset.groupId = group.id;
+  const section = el("div", { class: "group-section" }, [header, body]);
 
   // Drag-and-drop reordering of groups: the ⋮⋮ handle is the only draggable
   // part (so dragging never fights with clicking a card, a button, or
-  // collapsing the group), and any point over another section accepts the
-  // drop. Uses Pointer Events rather than native HTML5 drag-and-drop
-  // (draggable/dragstart/dragover/drop) because that API has no touch
-  // equivalent -- it simply does not fire on mobile browsers, which is why
-  // this couldn't be reordered at all from a phone before.
-  dragHandle.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
+  // collapsing the group), and any point over the section accepts the drop.
+  dragHandle.addEventListener("dragstart", (e) => {
     e.stopPropagation();
-    try { dragHandle.setPointerCapture(e.pointerId); } catch {}
+    e.dataTransfer.setData("text/plain", group.id);
+    e.dataTransfer.effectAllowed = "move";
     section.classList.add("dragging");
-    let overSection = null;
-
-    const onMove = (ev) => {
-      const hit = document.elementFromPoint(ev.clientX, ev.clientY);
-      const hovered = hit && hit.closest(".group-section");
-      const next = hovered && hovered !== section ? hovered : null;
-      if (overSection && overSection !== next) overSection.classList.remove("drag-over");
-      overSection = next;
-      if (overSection) overSection.classList.add("drag-over");
-    };
-    const onUp = () => {
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      document.removeEventListener("pointercancel", onUp);
-      section.classList.remove("dragging");
-      if (overSection) {
-        overSection.classList.remove("drag-over");
-        const targetId = overSection.dataset.groupId;
-        if (targetId) reorderGroups(group.id, targetId);
-      }
-    };
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
-    document.addEventListener("pointercancel", onUp);
+  });
+  dragHandle.addEventListener("dragend", (e) => {
+    e.stopPropagation();
+    section.classList.remove("dragging");
+  });
+  section.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer.types.includes("text/plain")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    section.classList.add("drag-over");
+  });
+  section.addEventListener("dragleave", () => section.classList.remove("drag-over"));
+  section.addEventListener("drop", (e) => {
+    e.preventDefault();
+    section.classList.remove("drag-over");
+    const draggedId = e.dataTransfer.getData("text/plain");
+    if (draggedId) reorderGroups(draggedId, group.id);
   });
 
   return section;
@@ -717,18 +570,8 @@ function buildFavoriteCard(fav) {
       ? el("img", { class: "avatar", src: fav.avatar, alt: "" })
       : el("span", { class: `platform-dot ${fav.platform}` }),
     el("div", { class: "meta" }, [
-      el("div", { class: "name", title: fav.name || fallbackLabel(fav.target) }, fav.name || fallbackLabel(fav.target)),
-      el(
-        "div",
-        {
-          class: "sub",
-          // Native browser tooltip: shows the full, untruncated stream title
-          // on hover, since the "sub" line itself is clipped with an ellipsis
-          // when the title is long (CSS in style.css).
-          title: (fav.liveStatus && fav.liveStatus.live && fav.liveStatus.title) || (fav.platform === "youtube" ? "YouTube" : "Twitch"),
-        },
-        (fav.liveStatus && fav.liveStatus.live && fav.liveStatus.title) || (fav.platform === "youtube" ? "YouTube" : "Twitch")
-      ),
+      el("div", { class: "name" }, fav.name || fallbackLabel(fav.target)),
+      el("div", { class: "sub" }, (fav.liveStatus && fav.liveStatus.live && fav.liveStatus.title) || (fav.platform === "youtube" ? "YouTube" : "Twitch")),
     ]),
     badge,
     liveMetaInline,
@@ -866,61 +709,37 @@ function addVideoFromArchive(fav, item) {
 }
 
 async function refreshLiveStatus() {
-  if (refreshProgressLabel) return; // already running -- ignore a double-click
   const state = getState();
   const twFavs = state.favorites.filter((f) => f.platform === "twitch");
   const ytFavs = state.favorites.filter((f) => f.platform === "youtube" && f.target.idType === "channelId");
-  const startedAt = Date.now();
 
-  // A manual refresh is a deliberate "check now", not a "someone just went
-  // live" event -- so it clears the alert bar rather than adding to it (see
-  // checkTwitchLiveStatuses's silent option below). Only the automatic
-  // background poll announces newly-live channels going forward from here.
-  clearAllLiveAlerts();
-
-  // Show progress immediately, even before the first network call resolves,
-  // so the button visibly changes the moment it's clicked (answers "did this
-  // actually do anything / is it instant?").
-  refreshProgressLabel = "🔄 更新中…";
-
-  // Clear every live badge that's about to be re-checked right away, so a
-  // channel whose stream actually ended since the last refresh doesn't keep
-  // showing "LIVE" for however long it takes this refresh to reach it -- it
-  // only shows live again once freshly confirmed by this refresh.
-  const toReset = new Set([
-    ...(twFavs.length && isTwitchSignedIn() ? twFavs : []),
-    ...(ytFavs.length && hasYoutubeApiKey() ? ytFavs : []),
-  ]);
-  if (toReset.size) {
-    update((s) => {
-      for (const f of s.favorites) if (toReset.has(f)) f.liveStatus = { live: false };
-    });
-  }
-  renderFavorites();
-
-  try {
-    if (twFavs.length && isTwitchSignedIn()) {
-      try {
-        await checkTwitchLiveStatuses({ silent: true });
-      } catch (err) {
-        toast(`Twitchのライブ状況取得に失敗しました: ${err.message}`, "error");
-      }
+  if (twFavs.length && isTwitchSignedIn()) {
+    try {
+      let userIds = twFavs.map((f) => f.target.userId).filter(Boolean);
+      if (userIds.length < twFavs.length) userIds = await resolveTwitchUserIds(twFavs);
+      const liveMap = await fetchLiveStreams(userIds);
+      update((s) => {
+        for (const f of s.favorites) {
+          if (f.platform !== "twitch") continue;
+          const info = f.target.userId ? liveMap.get(f.target.userId) : null;
+          f.liveStatus = info
+            ? { live: true, title: info.title, startedAt: info.startedAt, viewers: info.viewers }
+            : { live: false };
+        }
+      });
+    } catch (err) {
+      toast(`Twitchのライブ状況取得に失敗しました: ${err.message}`, "error");
     }
+  }
 
-    if (ytFavs.length && hasYoutubeApiKey()) {
-      // YouTube has no "check many channels' live status at once" endpoint --
-      // each channel needs its own couple of requests -- so instead of doing
-      // them strictly one after another (waiting out each network round trip
-      // before starting the next), run a small pool of them at the same time.
-      // This doesn't change how many API calls are made (same quota cost),
-      // it just stops waiting on network latency serially, so a large
-      // favorites list finishes in a fraction of the time.
-      const CONCURRENCY = 6;
+  if (ytFavs.length && hasYoutubeApiKey()) {
+    const proceed = window.confirm(
+      `YouTubeチャンネル${ytFavs.length}件のライブ状況を確認します。この操作はAPIクォータを多く消費します(1件あたり約100ユニット、無料枠は1日10,000ユニット)。続行しますか？`
+    );
+    if (proceed) {
       let quotaExceeded = false;
-      let completed = 0;
-      let nextIndex = 0;
-
-      const checkOne = async (f) => {
+      for (const f of ytFavs) {
+        if (quotaExceeded) break;
         try {
           const live = await checkChannelLive(f.target.id);
           patchFavorite(f.id, {
@@ -928,35 +747,14 @@ async function refreshLiveStatus() {
               ? { live: true, title: live.title, videoId: live.videoId, startedAt: live.startedAt, viewers: live.viewers }
               : { live: false },
           });
-          // No pushLiveAlert here on purpose -- a manual refresh clears the
-          // alert bar (see clearAllLiveAlerts() above) rather than adding to
-          // it; the bar is only for something noticed automatically after
-          // the last check, and YouTube has no automatic background check.
         } catch (err) {
           console.warn("checkChannelLive failed", err);
           // Once the daily quota is blown, every remaining call fails the
-          // same way -- stop starting new checks and surface one clear
-          // message instead of one silent failure per channel. Checks
-          // already in flight are left to finish rather than aborted.
+          // same way -- stop hammering the API and surface one clear
+          // message instead of one silent failure per channel.
           if (/quota/i.test(err.message) || /\b429\b/.test(err.message)) quotaExceeded = true;
-          renderFavorites();
         }
-        completed++;
-        refreshProgressLabel = `🔄 更新中… (${completed}/${ytFavs.length})`;
-      };
-
-      const worker = async () => {
-        while (!quotaExceeded) {
-          const i = nextIndex++;
-          if (i >= ytFavs.length) return;
-          await checkOne(ytFavs[i]);
-        }
-      };
-
-      await Promise.all(
-        Array.from({ length: Math.min(CONCURRENCY, ytFavs.length) }, worker)
-      );
-
+      }
       if (quotaExceeded) {
         toast(
           "YouTube APIの1日のクォータ上限に達したため、途中で確認を中断しました。クォータは太平洋時間の深夜(日本時間で17時頃)にリセットされます。時間をおいてもう一度お試しください。",
@@ -965,13 +763,10 @@ async function refreshLiveStatus() {
         );
       }
     }
-  } finally {
-    refreshProgressLabel = null;
-    renderFavorites();
   }
 
-  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
-  toast(`ライブ状況を更新しました。(${seconds}秒)`);
+  renderFavorites();
+  toast("ライブ状況を更新しました。");
 }
 
 async function resolveTwitchUserIds(twFavs) {

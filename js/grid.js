@@ -17,31 +17,16 @@ const MIN_W = 240;
 const MIN_H = 170;
 const GAP = 16;
 
-// Neither YouTube's nor Twitch's embedded player exposes "an ad is currently
-// playing" to embedding pages -- there is no supported way to tell a
-// pre-roll ad apart from the real content. As a practical stand-in: when a
-// panel is opened unmuted, force-mute it for this warm-up window (long
-// enough to cover most pre-roll ads) before restoring the panel's actual
-// volume/mute setting. This costs a few silent seconds of real content when
-// there was no ad, which is a much smaller annoyance than a sudden loud ad.
-const AD_GUARD_MS = 6000;
-
-let canvasEl, canvasWrapEl, emptyStateEl, autoArrangeBtn;
-
-// Auto-arrange cycles through a fixed set of column counts each time the
-// button is pressed (1 -> 2 -> 3 -> 1 -> ...), instead of always picking
-// the "best fit" column count automatically.
-const AUTO_ARRANGE_COLS_CYCLE = [1, 2, 3];
-let autoArrangeCycleIndex = 0;
+let canvasEl, canvasWrapEl, emptyStateEl;
 const instances = new Map(); // panelId -> { root, videoBox, chatBox, player, headerVolume, muteBtn, chatBtn, destroyed, isChatOnly }
 
 export function initGrid() {
   canvasEl = document.getElementById("canvas");
   canvasWrapEl = document.getElementById("canvasWrap");
   emptyStateEl = document.getElementById("emptyState");
-  autoArrangeBtn = document.getElementById("autoArrangeBtn");
 
   subscribe((state) => reconcile(state));
+  window.addEventListener("resize", () => applyResponsiveMode());
   reconcile(getState());
 }
 
@@ -148,12 +133,8 @@ export function autoArrange() {
   const state = getState();
   const panels = state.panels;
   if (!panels.length) return;
-
-  const desiredCols = AUTO_ARRANGE_COLS_CYCLE[autoArrangeCycleIndex];
-  autoArrangeCycleIndex = (autoArrangeCycleIndex + 1) % AUTO_ARRANGE_COLS_CYCLE.length;
-
   const wrapW = Math.max(canvasWrapEl.clientWidth, DEFAULT_W);
-  const cols = Math.max(1, Math.min(panels.length, desiredCols));
+  const cols = Math.max(1, Math.min(panels.length, Math.floor(wrapW / DEFAULT_W) || 1));
   const rows = Math.ceil(panels.length / cols);
   const tileW = Math.floor(wrapW / cols);
   const wrapH = Math.max(canvasWrapEl.clientHeight, DEFAULT_H);
@@ -169,11 +150,6 @@ export function autoArrange() {
       p.h = tileH;
     });
   });
-
-  if (autoArrangeBtn) {
-    autoArrangeBtn.textContent = `自動整列 (${cols}列)`;
-    autoArrangeBtn.title = `自動整列 -- 現在${cols}列。もう一度押すと${AUTO_ARRANGE_COLS_CYCLE[autoArrangeCycleIndex]}列に切り替わります`;
-  }
 }
 
 function computeInitialPosition(index, w = DEFAULT_W, h = DEFAULT_H) {
@@ -210,25 +186,13 @@ function reconcile(state) {
     }
   }
 
-  syncStackOrder(panels);
+  applyResponsiveMode();
   updateCanvasExtent(panels);
 }
 
-// panel.z (from nextZ() in state.js) is a counter that only ever grows, and
-// is persisted across sessions -- with enough use it eventually exceeds
-// fixed z-indexes used elsewhere in the UI (e.g. the mobile sidebar drawer,
-// which needs to stay above panels at z-index:120 in style.css), letting a
-// panel render on top of the sidebar instead of staying behind it. panel.z
-// itself is only used here for relative order (who's "more front" than
-// whom); what actually gets written to the DOM is a normalized index (1..N
-// among the panels currently open), which can never exceed the panel count
-// and so always stays safely below any fixed piece of UI chrome.
-function syncStackOrder(panels) {
-  const ordered = [...panels].sort((a, b) => (a.z || 0) - (b.z || 0));
-  ordered.forEach((panel, i) => {
-    const inst = instances.get(panel.id);
-    if (inst) inst.root.style.zIndex = String(i + 1);
-  });
+function applyResponsiveMode() {
+  if (!canvasEl) return;
+  canvasEl.classList.toggle("mobile-stack", window.innerWidth <= 820);
 }
 
 function updateCanvasExtent(panels) {
@@ -244,7 +208,6 @@ function updateCanvasExtent(panels) {
 
 function destroyInstance(inst) {
   inst.destroyed = true;
-  if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
   try { inst.player && inst.player.destroy(); } catch {}
   try { inst.root.remove(); } catch {}
 }
@@ -287,9 +250,6 @@ function mountPanel(panel) {
     type: "range", min: "0", max: "100", value: String(panel.volume),
     title: "音量",
     oninput: (e) => {
-      // A manual volume change means the user has already decided what they
-      // want to hear -- don't let the ad-guard timer override it later.
-      if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
       const v = Number(e.target.value);
       setPanelVolume(panel.id, v);
       inst.player && inst.player.setVolume(v);
@@ -301,8 +261,6 @@ function mountPanel(panel) {
     class: "ctrl-btn",
     title: "ミュート切替",
     onclick: () => {
-      // Same as above -- a manual mute/unmute click overrides the ad-guard timer.
-      if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
       const cur = getState().panels.find((p) => p.id === panel.id);
       const nextMuted = cur ? !cur.muted : false;
       setPanelMuted(panel.id, nextMuted);
@@ -323,6 +281,10 @@ function mountPanel(panel) {
     onclick: () => detachChat(panel.id),
   }, "🗗");
 
+  const linkBtn = el("a", {
+    class: "ctrl-btn", href: buildExternalUrl(panel.target), target: "_blank", rel: "noopener noreferrer", title: "外部で開く",
+  }, "↗");
+
   const closeBtn = el("button", {
     class: "ctrl-btn", title: "閉じる",
     onclick: () => removePanel(panel.id),
@@ -336,6 +298,7 @@ function mountPanel(panel) {
     el("span", { class: "volume-wrap" }, [muteBtn, volumeInput]),
     chatBtn,
     detachChatBtn,
+    linkBtn,
     closeBtn,
   ]);
 
@@ -369,6 +332,9 @@ function mountPanel(panel) {
 // draggable/resizable/closable like any panel, but no video player, volume
 // controls, or chat-toggle (it IS the chat).
 function mountChatPanel(root, panel) {
+  const linkBtn = el("a", {
+    class: "ctrl-btn", href: buildExternalUrl(panel.target), target: "_blank", rel: "noopener noreferrer", title: "外部で開く",
+  }, "↗");
   const closeBtn = el("button", {
     class: "ctrl-btn", title: "閉じる",
     onclick: () => removePanel(panel.id),
@@ -377,6 +343,7 @@ function mountChatPanel(root, panel) {
   const header = el("div", { class: "panel-header" }, [
     platformDot(panel.target.platform),
     titleEl,
+    linkBtn,
     closeBtn,
   ]);
 
@@ -405,13 +372,9 @@ function mountChatPanel(root, panel) {
 
 function mountPlayer(inst, panel) {
   const target = panel.target;
-  // See AD_GUARD_MS above -- force a silent start even for a panel the user
-  // wants audible, then restore its real volume/mute setting shortly after.
-  // A panel the user already muted needs no guard (it's silent either way).
-  const guardAgainstAds = !panel.muted;
   const commonOpts = {
     volume: panel.volume,
-    muted: guardAgainstAds ? true : panel.muted,
+    muted: panel.muted,
     onReady: () => {},
     onError: () => {
       if (inst.destroyed) return;
@@ -445,14 +408,6 @@ function mountPlayer(inst, panel) {
   playerPromise.then((handle) => {
     if (inst.destroyed) { try { handle.destroy(); } catch {} return; }
     inst.player = handle;
-
-    if (guardAgainstAds) {
-      inst.adGuardTimer = setTimeout(() => {
-        inst.adGuardTimer = null;
-        if (inst.destroyed) return;
-        try { handle.setVolume(panel.volume); handle.setMuted(panel.muted); } catch {}
-      }, AD_GUARD_MS);
-    }
   }).catch((err) => {
     console.warn(err);
     if (!inst.destroyed) showVideoFallback(inst, "プレイヤーの読み込みに失敗しました。");
@@ -523,13 +478,8 @@ function bringToFront(panelId) {
     const p = s.panels.find((x) => x.id === panelId);
     if (p) p.z = z;
   }, { notify: false });
-  // { notify: false } above skips the full subscribe-driven re-render (so
-  // dragging doesn't fight itself), but the on-screen stacking order still
-  // needs updating right away -- through the same normalization reconcile()
-  // uses (see syncStackOrder), not the raw counter value, so a panel brought
-  // to front here can never end up with a z-index high enough to cover
-  // fixed UI chrome like the mobile sidebar drawer (z-index:120).
-  syncStackOrder(getState().panels);
+  const inst = instances.get(panelId);
+  if (inst) inst.root.style.zIndex = String(z);
 }
 
 function attachDrag(root, handle, panelId) {

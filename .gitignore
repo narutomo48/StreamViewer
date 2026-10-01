@@ -1,0 +1,4 @@
+# Local-only generated files / logs (not part of the deployed app)
+Claude outputs/
+start_streamviewer.log
+*.log

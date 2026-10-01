@@ -35,25 +35,12 @@ function loadState() {
     if (!raw) return structuredCloneCompat(DEFAULT_STATE);
     const parsed = JSON.parse(raw);
     // shallow-merge with defaults so new fields introduced later don't break old saves
-    const merged = {
+    return {
       ...structuredCloneCompat(DEFAULT_STATE),
       ...parsed,
-      // The app should always launch to an empty canvas rather than
-      // auto-reopening whatever panels happened to be open last time --
-      // favorites/groups/presets/settings/auth are still restored as normal,
-      // just not the transient "what's currently on screen" layout. Load a
-      // preset (or re-add favorites) to get panels back after launch.
-      panels: [],
       settings: { ...DEFAULT_STATE.settings, ...(parsed.settings || {}) },
       auth: { ...DEFAULT_STATE.auth, ...(parsed.auth || {}) },
     };
-    // Live status (LIVE badge / title / viewer count) is a snapshot from
-    // whenever it was last checked -- it goes stale the instant the tab
-    // closes, so launching the app should never show a possibly-hours-old
-    // "LIVE" badge as if it were current fact. Everyone starts "not known
-    // live" until freshly (re)checked this session.
-    merged.favorites = (merged.favorites || []).map((f) => ({ ...f, liveStatus: { live: false } }));
-    return merged;
   } catch (err) {
     console.warn("Failed to load saved state, starting fresh.", err);
     return structuredCloneCompat(DEFAULT_STATE);

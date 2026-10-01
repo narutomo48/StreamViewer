@@ -50,54 +50,6 @@ body {
 #brand { font-weight: 700; font-size: 16px; white-space: nowrap; }
 #brand span { color: var(--accent); }
 
-/* ---------- "just went live" alert bar ---------- */
-/* Shown below the top bar whenever a favorited channel is freshly detected
-   as live (via a free Twitch background poll, or a manual YouTube refresh --
-   see sidebar.js). Empty = hidden entirely via the [hidden] attribute. */
-.live-alert-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--panel-2);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-.live-alert-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 4px;
-  border-radius: 999px;
-  background: var(--bg-alt);
-  border: 1px solid var(--accent);
-  cursor: pointer;
-  flex: 0 0 auto;
-  animation: liveAlertPop 0.2s ease-out;
-}
-.live-alert-chip:hover { border-color: var(--accent-2); }
-.live-alert-chip .avatar,
-.live-alert-chip .platform-dot { width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto; }
-.live-alert-chip .name {
-  font-size: 12px; font-weight: 600; max-width: 140px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.live-alert-chip .live-tag {
-  font-size: 9px; font-weight: 700; color: #fff; background: var(--danger);
-  padding: 1px 5px; border-radius: 999px; letter-spacing: 0.02em; flex: 0 0 auto;
-}
-.live-alert-chip .dismiss {
-  background: transparent; border: none; color: var(--text-dim);
-  font-size: 12px; cursor: pointer; padding: 2px 4px; line-height: 1; flex: 0 0 auto;
-}
-.live-alert-chip .dismiss:hover { color: var(--text); }
-@keyframes liveAlertPop {
-  from { transform: scale(0.85); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-
 .presetbar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .presetbar select { max-width: 140px; }
 #topbarRight { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: 0 0 auto; }
@@ -279,9 +231,6 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
 .group-header .group-drag-handle {
   flex: 0 0 auto; color: var(--text-dim); font-size: 12px; letter-spacing: -1px;
   cursor: grab; padding: 0 2px; line-height: 1;
-  /* Without this, a touch-drag on the handle can get hijacked by the
-     sidebar's own scrolling before our pointermove handler ever sees it. */
-  touch-action: none;
 }
 .group-header .group-drag-handle:active { cursor: grabbing; }
 .group-section.dragging { opacity: 0.45; }
@@ -445,12 +394,14 @@ legend { padding: 0 6px; font-size: 12px; color: var(--text-dim); }
   .presetbar select { max-width: 90px; }
   #brand { font-size: 14px; }
 
-  /* Panels used to be force-stacked full-width here (position/size pinned
-     with !important), which incidentally made it impossible to drag-move or
-     drag-resize a panel from a phone -- CSS was overriding whatever the
-     pointer-drag code in grid.js was doing. Panels now keep the same
-     freely-positioned/resizable behavior as desktop; #canvasWrap already
-     scrolls (overflow: auto) so a panel placed outside the visible area is
-     still reachable by scrolling/panning. */
+  /* stack panels full-width on small screens regardless of stored x/y */
+  .canvas.mobile-stack .stream-panel {
+    position: relative !important;
+    left: auto !important; top: auto !important;
+    width: 100% !important;
+    height: 260px !important;
+    margin-bottom: 10px;
+  }
+  .canvas.mobile-stack { display: flex; flex-direction: column; padding: 10px; }
   .panel-chat { flex-basis: 50%; max-width: 60%; }
 }
