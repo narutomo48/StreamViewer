@@ -2,10 +2,6 @@
 // embeddable chat iframe (viewer reads+sends using their own logged-in
 // session inside that iframe -- no API key or OAuth needed for this part).
 
-function isNarrowViewport() {
-  return window.innerWidth <= 820;
-}
-
 export function buildChatPane(target, container) {
   container.innerHTML = "";
   const host = location.hostname || "";
@@ -29,9 +25,6 @@ export function buildChatPane(target, container) {
     // colors while the surrounding chrome stays dark, making them unreadable.
     iframe.src = `https://www.youtube.com/live_chat?v=${encodeURIComponent(target.id)}&embed_domain=${encodeURIComponent(host)}&dark_theme=1`;
     container.appendChild(iframe);
-    if (isNarrowViewport()) {
-      appendNote(container, "※ YouTubeのチャット埋め込みは、モバイル向けの狭い画面では表示されない場合があります（YouTube側の制限）。");
-    }
     return;
   }
 
