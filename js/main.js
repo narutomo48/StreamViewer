@@ -3,7 +3,9 @@ import { initGrid, autoArrange, clearAllPanels } from "./grid.js";
 import { initSidebar, refreshAuthButtons, onTwitchLoginCompleted } from "./sidebar.js";
 import { initPresetBar } from "./presets.js";
 import { initSettings } from "./settings.js";
-import { handleTwitchRedirect } from "./auth/twitchAuth.js";
+import { handleTwitchRedirect, isTwitchTokenExpired, signInTwitch } from "./auth/twitchAuth.js";
+import { startYoutubeSilentRefresh } from "./auth/googleAuth.js";
+import { hasTwitchClientId } from "./settings.js";
 
 function wireTopbar() {
   const sidebarToggle = qs("#sidebarToggle");
@@ -39,6 +41,29 @@ async function registerServiceWorker() {
   }
 }
 
+// Twitch's implicit-grant token has no silent/background refresh path --
+// its OAuth endpoint blocks being embedded in an iframe (X-Frame-Options),
+// and the implicit flow issues no refresh token (see isTwitchTokenExpired()
+// in twitchAuth.js) -- so renewing it without a manual click means a
+// full-page redirect to Twitch and back. That's only safe to do
+// automatically right here, at startup before the user has opened anything:
+// panels never persist across a reload anyway (see state.js), so there's
+// nothing on screen to lose. Doing this mid-session instead would silently
+// blow away whatever the user has open. If the user is still logged into
+// twitch.tv and already approved this app's scopes, Twitch skips its
+// consent screen and redirects straight back almost instantly -- otherwise
+// it just shows the normal Twitch login page, same as clicking
+// "Twitchでログイン" would.
+function maybeAutoReloginTwitch() {
+  if (!isTwitchTokenExpired()) return; // never signed in, or still valid -- nothing to do
+  if (!hasTwitchClientId()) return;
+  try {
+    signInTwitch();
+  } catch (err) {
+    console.warn("Twitchの自動再ログインに失敗しました", err);
+  }
+}
+
 async function main() {
   initGrid();
   initSidebar();
@@ -47,12 +72,14 @@ async function main() {
   wireTopbar();
   warnIfFileProtocol();
   registerServiceWorker();
+  startYoutubeSilentRefresh();
 
   const cameFromTwitch = await handleTwitchRedirect();
   if (cameFromTwitch) {
     await onTwitchLoginCompleted();
   } else {
     refreshAuthButtons();
+    maybeAutoReloginTwitch();
   }
 }
 

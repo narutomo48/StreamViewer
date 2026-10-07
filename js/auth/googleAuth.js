@@ -70,3 +70,34 @@ export function signOutYoutube() {
   } catch {}
   update((s) => { s.auth.youtube = null; });
 }
+
+// How often to check whether the token needs renewing, and how far ahead of
+// actual expiry to renew it (catch it before anything relying on a valid
+// token hits a gap, not after).
+const SILENT_REFRESH_CHECK_MS = 5 * 60 * 1000;
+const SILENT_REFRESH_LEAD_MS = 5 * 60 * 1000;
+
+// Unlike Twitch's implicit grant (see twitchAuth.js / main.js), GIS's token
+// client supports requesting a fresh token with prompt:"" -- if the user is
+// still signed into their Google account in this browser and has already
+// granted this app's scope before, that resolves with a new token with
+// little to no visible UI, instead of requiring a click on "YouTubeでログイン"
+// every time the ~1 hour access token expires. Call this once at startup;
+// it keeps renewing itself in the background for as long as the tab stays
+// open. A failed attempt (e.g. the user isn't actively signed into Google
+// right now) is left silent -- the existing manual login button is still
+// there as a fallback, so there's no need to interrupt the user over a
+// background refresh they never asked for directly.
+export function startYoutubeSilentRefresh() {
+  const tick = () => {
+    const auth = getState().auth.youtube;
+    if (!auth || !auth.accessToken) return; // never signed in -- nothing to refresh
+    if (auth.expiresAt - Date.now() > SILENT_REFRESH_LEAD_MS) return; // still fresh enough
+    if (!(getState().settings.youtubeClientId || "").trim()) return;
+    signInYoutube().catch((err) => {
+      console.warn("YouTubeトークンのサイレント更新に失敗しました", err);
+    });
+  };
+  tick(); // catch a token that's already stale (or near-stale) right at startup too
+  setInterval(tick, SILENT_REFRESH_CHECK_MS);
+}
