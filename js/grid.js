@@ -193,12 +193,10 @@ function reconcile(state) {
   canvasEl.classList.toggle("has-panels", panels.length > 0);
 
   const liveIds = new Set(panels.map((p) => p.id));
-  let anyRemoved = false;
   for (const [id, inst] of instances) {
     if (!liveIds.has(id)) {
       destroyInstance(inst);
       instances.delete(id);
-      anyRemoved = true;
     }
   }
 
@@ -212,26 +210,24 @@ function reconcile(state) {
     }
   }
 
-  // Closing one panel can occasionally knock the audio out of OTHER still-
-  // open panels until THEY are closed and reopened -- removing an iframe
-  // from the page seems to sometimes disturb sibling iframes' internal audio
-  // state via the browser/embed APIs, not anything this app's own JS
-  // controls directly (other multiviewer tools built on the same embeds hit
-  // this too). Just re-asserting volume/mute through the player APIs (an
-  // earlier attempt at this) wasn't enough to reliably bring the audio back
-  // -- whatever gets disturbed lives below that API, in the iframe's own
-  // internal playback state. The one thing confirmed to fix it is closing
-  // every panel and reopening them, which recreates each player's iframe
-  // from scratch -- so do that automatically for the panels that are still
-  // here instead of making the user close and reopen everything by hand.
-  // There's no reliable way to tell which specific survivor actually lost
-  // audio, so every surviving stream panel gets remounted; this costs each
-  // of them a brief reload of their live video, matching what manually
-  // closing and reopening already costs.
-  if (anyRemoved) remountPlayers(panels);
-
   syncStackOrder(panels);
   updateCanvasExtent(panels);
+}
+
+// Closing one panel can occasionally knock the audio out of OTHER still-open
+// panels until THEY are closed and reopened -- removing an iframe from the
+// page seems to sometimes disturb sibling iframes' internal audio state via
+// the browser/embed APIs, not anything this app's own JS controls directly
+// (other multiviewer tools built on the same embeds hit this too). This used
+// to run automatically on every panel close, remounting every surviving
+// player -- but that meant EVERY close reloaded EVERY other open stream
+// (losing their playback position/chat scroll) whether or not anything had
+// actually gone silent, which was worse than the bug for anyone with more
+// than a couple of panels open. It's now manual instead: call this (wired to
+// the topbar's "更新" button) to reopen every currently displayed panel on
+// demand, same as closing and reopening each one by hand would.
+export function reloadAllPanels() {
+  remountPlayers(getState().panels);
 }
 
 function remountPlayers(panels) {

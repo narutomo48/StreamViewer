@@ -1,5 +1,5 @@
 import { qs, toast } from "./utils/dom.js";
-import { initGrid, autoArrange, clearAllPanels } from "./grid.js";
+import { initGrid, autoArrange, clearAllPanels, reloadAllPanels } from "./grid.js";
 import { initSidebar, refreshAuthButtons, onTwitchLoginCompleted, autoRefreshLiveStatusOnStartup } from "./sidebar.js";
 import { initPresetBar } from "./presets.js";
 import { initSettings } from "./settings.js";
@@ -15,6 +15,7 @@ function wireTopbar() {
   // Start collapsed on narrow screens so the canvas is visible first.
   if (window.innerWidth <= 820) sidebar.classList.add("collapsed");
 
+  qs("#reloadAllBtn").addEventListener("click", reloadAllPanels);
   qs("#autoArrangeBtn").addEventListener("click", autoArrange);
   qs("#clearAllBtn").addEventListener("click", () => {
     if (window.confirm("開いている配信をすべて閉じますか？")) clearAllPanels();
