@@ -49,6 +49,7 @@ body {
 }
 #brand { font-weight: 700; font-size: 16px; white-space: nowrap; }
 #brand span { color: var(--accent); }
+.app-version { font-weight: 400; font-size: 11px; color: var(--text-dim); vertical-align: middle; }
 
 /* ---------- "just went live" alert bar ---------- */
 /* Shown below the top bar whenever a favorited channel is freshly detected

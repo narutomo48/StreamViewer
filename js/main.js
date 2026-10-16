@@ -6,6 +6,7 @@ import { initSettings } from "./settings.js";
 import { handleTwitchRedirect, isTwitchTokenExpired, signInTwitch } from "./auth/twitchAuth.js";
 import { startYoutubeSilentRefresh } from "./auth/googleAuth.js";
 import { hasTwitchClientId } from "./settings.js";
+import { APP_VERSION } from "./version.js";
 
 function wireTopbar() {
   const sidebarToggle = qs("#sidebarToggle");
@@ -14,6 +15,13 @@ function wireTopbar() {
 
   // Start collapsed on narrow screens so the canvas is visible first.
   if (window.innerWidth <= 820) sidebar.classList.add("collapsed");
+
+  // Shown next to the app name mainly so it's easy to tell, right after a
+  // deploy, whether the browser is actually running the new code yet --
+  // GitHub Pages' CDN can take a little while to fully roll a push out, and
+  // different files can update at slightly different times in that window.
+  const versionEl = qs("#appVersion");
+  if (versionEl) versionEl.textContent = `v${APP_VERSION}`;
 
   qs("#reloadAllBtn").addEventListener("click", reloadAllPanels);
   qs("#autoArrangeBtn").addEventListener("click", autoArrange);
