@@ -88,16 +88,23 @@ const SILENT_REFRESH_LEAD_MS = 5 * 60 * 1000;
 // right now) is left silent -- the existing manual login button is still
 // there as a fallback, so there's no need to interrupt the user over a
 // background refresh they never asked for directly.
+//
+// Returns a promise that settles once this startup attempt (if any was
+// needed) is done -- callers like main.js can await it to know when it's
+// safe to check "is YouTube actually signed in" for anything that should
+// happen right after auto-login (e.g. an initial live-status refresh),
+// instead of racing the background refresh that's still in flight.
 export function startYoutubeSilentRefresh() {
   const tick = () => {
     const auth = getState().auth.youtube;
-    if (!auth || !auth.accessToken) return; // never signed in -- nothing to refresh
-    if (auth.expiresAt - Date.now() > SILENT_REFRESH_LEAD_MS) return; // still fresh enough
-    if (!(getState().settings.youtubeClientId || "").trim()) return;
-    signInYoutube().catch((err) => {
+    if (!auth || !auth.accessToken) return Promise.resolve(); // never signed in -- nothing to refresh
+    if (auth.expiresAt - Date.now() > SILENT_REFRESH_LEAD_MS) return Promise.resolve(); // still fresh enough
+    if (!(getState().settings.youtubeClientId || "").trim()) return Promise.resolve();
+    return signInYoutube().catch((err) => {
       console.warn("YouTubeトークンのサイレント更新に失敗しました", err);
     });
   };
-  tick(); // catch a token that's already stale (or near-stale) right at startup too
+  const initialAttempt = tick(); // catch a token that's already stale (or near-stale) right at startup too
   setInterval(tick, SILENT_REFRESH_CHECK_MS);
+  return initialAttempt;
 }

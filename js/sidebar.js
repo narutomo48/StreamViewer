@@ -1,4 +1,4 @@
-import { getState, update, uid } from "./state.js";
+import { getState, update, uid, subscribe } from "./state.js";
 import { parseStreamInput, fallbackLabel } from "./utils/parseStream.js";
 import { qs, el, toast, askText } from "./utils/dom.js";
 import { addPanel } from "./grid.js";
@@ -47,6 +47,15 @@ export function initSidebar() {
   wireAddFavorite();
   wireAuthButtons();
   startTwitchAutoPoll();
+
+  // refreshAuthButtons() only reads state synchronously -- it doesn't by
+  // itself notice auth finishing LATER (YouTube's silent token refresh in
+  // googleAuth.js resolves asynchronously in the background, and nothing
+  // else was re-rendering the button after that). Subscribing here means any
+  // change to state (auth included) keeps the "ログイン/ログアウト" button
+  // text truthful, instead of it getting stuck showing whatever was true at
+  // the instant the page loaded even after the user is actually signed in.
+  subscribe(() => refreshAuthButtons());
 
   renderFavorites();
 }
@@ -118,13 +127,14 @@ function startTwitchAutoPoll() {
   setInterval(poll, TWITCH_AUTO_POLL_MS);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   setInterval(pruneStaleLiveAlerts, 60 * 1000);
-  // Initial sync shortly after load -- silent (no alert chips). This just
-  // establishes the starting "who's live" baseline (everyone starts "not
-  // known live" on launch -- see state.js), it isn't "someone just went
-  // live", so it shouldn't be announced as one.
-  setTimeout(() => {
-    checkTwitchLiveStatuses({ silent: true }).catch((err) => console.warn("Twitchの初期確認に失敗しました", err));
-  }, 5000);
+  // The initial "who's live" baseline check (everyone starts "not known
+  // live" on launch -- see state.js) used to be fired from a fixed 5-second
+  // timer here. That was a guess at how long auto-login takes and ran
+  // whether or not login had actually finished by then. It's now done by
+  // autoRefreshLiveStatusOnStartup() below, called from main.js right after
+  // the startup auto-login (YouTube silent refresh / Twitch auto-relogin)
+  // has actually settled, so it reliably sees the real signed-in state
+  // instead of racing it.
 }
 
 // Shared by both the manual "ライブ状況を更新" button and the automatic
@@ -875,6 +885,21 @@ async function fetchArchiveItems(fav) {
 function addVideoFromArchive(fav, item) {
   addPanel(item.target, { title: `${fav.name}: ${item.title}` });
   toast(`追加しました: ${item.title}`);
+}
+
+// Runs the same check as the manual "🔄 ライブ状況を更新" button, but called
+// once automatically right after startup's auto-login has settled (see
+// main.js), instead of leaving the sidebar showing stale/unknown live
+// badges until the user remembers to press the button themselves. Skips
+// entirely (no toast) when there's nothing it could possibly check, so
+// someone who doesn't use YouTube/Twitch login at all doesn't get a
+// pointless "ライブ状況を更新しました。(0.0秒)" toast on every launch.
+export async function autoRefreshLiveStatusOnStartup() {
+  const state = getState();
+  const hasTwitchFavs = state.favorites.some((f) => f.platform === "twitch");
+  const hasYoutubeFavs = state.favorites.some((f) => f.platform === "youtube" && f.target.idType === "channelId");
+  if (!hasTwitchFavs && !hasYoutubeFavs) return;
+  await refreshLiveStatus();
 }
 
 async function refreshLiveStatus() {

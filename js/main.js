@@ -1,6 +1,6 @@
 import { qs, toast } from "./utils/dom.js";
 import { initGrid, autoArrange, clearAllPanels } from "./grid.js";
-import { initSidebar, refreshAuthButtons, onTwitchLoginCompleted } from "./sidebar.js";
+import { initSidebar, refreshAuthButtons, onTwitchLoginCompleted, autoRefreshLiveStatusOnStartup } from "./sidebar.js";
 import { initPresetBar } from "./presets.js";
 import { initSettings } from "./settings.js";
 import { handleTwitchRedirect, isTwitchTokenExpired, signInTwitch } from "./auth/twitchAuth.js";
@@ -72,7 +72,7 @@ async function main() {
   wireTopbar();
   warnIfFileProtocol();
   registerServiceWorker();
-  startYoutubeSilentRefresh();
+  const ytSilentRefreshDone = startYoutubeSilentRefresh();
 
   const cameFromTwitch = await handleTwitchRedirect();
   if (cameFromTwitch) {
@@ -81,6 +81,17 @@ async function main() {
     refreshAuthButtons();
     maybeAutoReloginTwitch();
   }
+
+  // Auto-login (YouTube's silent refresh above, Twitch's handling above) is
+  // now as settled as it's going to get without a user click -- this is the
+  // right moment to also auto-run a live-status check, instead of leaving
+  // the sidebar showing "not known live" for everyone until the user
+  // remembers to press "🔄 ライブ状況を更新" themselves. No-ops quietly if
+  // there's nothing signed-in/configured to check.
+  await ytSilentRefreshDone;
+  autoRefreshLiveStatusOnStartup().catch((err) => {
+    console.warn("起動時のライブ状況自動更新に失敗しました", err);
+  });
 }
 
 main().catch((err) => {
