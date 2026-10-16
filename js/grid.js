@@ -217,25 +217,32 @@ function reconcile(state) {
   // from the page seems to sometimes disturb sibling iframes' internal audio
   // state via the browser/embed APIs, not anything this app's own JS
   // controls directly (other multiviewer tools built on the same embeds hit
-  // this too). There's no reliable way to detect that a sibling player went
-  // silent, but re-asserting every remaining player's volume/mute right
-  // after a removal is a cheap, harmless nudge that can re-engage a player
-  // whose audio got stuck, without the user having to manually close and
-  // reopen it.
-  if (anyRemoved) reassertPlayerAudio(panels);
+  // this too). Just re-asserting volume/mute through the player APIs (an
+  // earlier attempt at this) wasn't enough to reliably bring the audio back
+  // -- whatever gets disturbed lives below that API, in the iframe's own
+  // internal playback state. The one thing confirmed to fix it is closing
+  // every panel and reopening them, which recreates each player's iframe
+  // from scratch -- so do that automatically for the panels that are still
+  // here instead of making the user close and reopen everything by hand.
+  // There's no reliable way to tell which specific survivor actually lost
+  // audio, so every surviving stream panel gets remounted; this costs each
+  // of them a brief reload of their live video, matching what manually
+  // closing and reopening already costs.
+  if (anyRemoved) remountPlayers(panels);
 
   syncStackOrder(panels);
   updateCanvasExtent(panels);
 }
 
-function reassertPlayerAudio(panels) {
+function remountPlayers(panels) {
   for (const panel of panels) {
     const inst = instances.get(panel.id);
-    if (!inst || inst.isChatOnly || !inst.player) continue;
-    try {
-      inst.player.setVolume(panel.volume);
-      inst.player.setMuted(!!panel.muted);
-    } catch {}
+    if (!inst || inst.isChatOnly) continue;
+    if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
+    try { inst.player && inst.player.destroy(); } catch {}
+    inst.player = null;
+    inst.videoBox.innerHTML = "";
+    mountPlayer(inst, panel);
   }
 }
 
