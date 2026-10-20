@@ -866,20 +866,7 @@ async function fetchArchiveItems(fav) {
     if (fav.target.idType !== "channelId") throw new Error("このチャンネルはAPIキーでの解決が必要です。");
     if (!hasYoutubeApiKey()) throw new Error("設定画面でYouTube APIキーを登録してください。");
     const { items } = await fetchYtArchive(fav.target.id);
-    // liveChat: "replay" tells chat.js to embed YouTube's chat *replay*
-    // instead of the live-chat embed, which otherwise shows "このライブ
-    // ストリームではチャットは無効です" for anything that isn't currently
-    // live. Only set it when v.wasLive confirms this specific video actually
-    // was a finished live broadcast (see fetchChannelArchive in
-    // youtubeApi.js) -- using live_chat_replay for a video that was never
-    // live shows YouTube's own generic embed error page instead, which is
-    // worse than the plain "disabled" message, so a regular upload is left
-    // on the default live_chat branch in chat.js.
-    return items.map((v) => ({
-      title: v.title,
-      thumbnail: v.thumbnail,
-      target: { platform: "youtube", mode: "video", id: v.videoId, ...(v.wasLive ? { liveChat: "replay" } : {}) },
-    }));
+    return items.map((v) => ({ title: v.title, thumbnail: v.thumbnail, target: { platform: "youtube", mode: "video", id: v.videoId } }));
   }
   if (fav.platform === "twitch") {
     if (!isTwitchSignedIn()) throw new Error("Twitchにログインしてください。");

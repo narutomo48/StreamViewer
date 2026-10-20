@@ -160,33 +160,11 @@ export async function fetchChannelArchive(channelId, pageToken) {
     maxResults: 12,
     pageToken,
   });
-  const rawItems = (plData.items || []).map((it) => ({
+  const items = (plData.items || []).map((it) => ({
     videoId: it.snippet.resourceId.videoId,
     title: it.snippet.title,
     thumbnail: it.snippet.thumbnails?.medium?.url || it.snippet.thumbnails?.default?.url || "",
     publishedAt: it.snippet.publishedAt,
   }));
-
-  // A regular (never-live) upload has no liveStreamingDetails at all -- only
-  // a video that was actually a live broadcast/premiere has one, and only
-  // one that has FINISHED (and has a replay to show) has actualEndTime set.
-  // Knowing this up front lets the chat pane pick YouTube's live_chat_replay
-  // embed only for videos that can actually have a replay -- using it for
-  // anything else surfaces YouTube's own generic embed error page ("Something
-  // went wrong") instead of a clean "no chat" message. See wasLive below,
-  // consumed by sidebar.js's addVideoFromArchive / chat.js. This costs one
-  // extra ~1-unit videos.list call per archive page (up to 12 ids at once),
-  // not one per video.
-  const wasLiveById = new Map();
-  if (rawItems.length) {
-    try {
-      const vidData = await apiFetch("videos", { part: "liveStreamingDetails", id: rawItems.map((it) => it.videoId).join(",") });
-      for (const v of vidData.items || []) wasLiveById.set(v.id, !!v.liveStreamingDetails?.actualEndTime);
-    } catch (err) {
-      console.warn("liveStreamingDetails の取得に失敗しました（チャットリプレイ判定をスキップします）", err);
-    }
-  }
-
-  const items = rawItems.map((it) => ({ ...it, wasLive: wasLiveById.get(it.videoId) || false }));
   return { items, nextPageToken: plData.nextPageToken || null };
 }

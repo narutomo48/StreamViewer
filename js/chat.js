@@ -20,20 +20,10 @@ export function buildChatPane(target, container) {
     }
     const iframe = document.createElement("iframe");
     iframe.loading = "lazy";
-    // YouTube has two separate embeddable chat endpoints: live_chat (only
-    // works while the stream is actually live) and live_chat_replay (the
-    // saved chat log for a past live stream/premiere -- only live_chat_replay
-    // works once the broadcast has ended). Using live_chat for an archived
-    // video just shows YouTube's own "このライブストリームではチャットは
-    // 無効です" message inside the iframe. target.liveChat === "replay" is
-    // set when we know in advance this is a past broadcast (see
-    // addVideoFromArchive in sidebar.js); a regular (never-live) upload has
-    // no chat either way, so this is a strict improvement with no downside.
     // dark_theme=1 matters here: without it YouTube's chat embed can render
     // some rows (colored usernames, certain badges) in light-theme text
     // colors while the surrounding chrome stays dark, making them unreadable.
-    const endpoint = target.liveChat === "replay" ? "live_chat_replay" : "live_chat";
-    iframe.src = `https://www.youtube.com/${endpoint}?v=${encodeURIComponent(target.id)}&embed_domain=${encodeURIComponent(host)}&dark_theme=1`;
+    iframe.src = `https://www.youtube.com/live_chat?v=${encodeURIComponent(target.id)}&embed_domain=${encodeURIComponent(host)}&dark_theme=1`;
     container.appendChild(iframe);
     return;
   }
