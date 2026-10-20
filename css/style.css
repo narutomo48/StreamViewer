@@ -237,6 +237,13 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
 .channel-card .platform-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .platform-dot.youtube { background: var(--yt); }
 .platform-dot.twitch { background: var(--tw); }
+/* A colored ring around the avatar itself (box-shadow, not border, so it
+   doesn't change the avatar's box size/layout) -- lets you tell YouTube from
+   Twitch favorites at a glance even once every row has a real avatar image
+   and the platform-dot fallback above never shows. Used on both the
+   favorites list and the "just went live" alert chips (both use .avatar). */
+.avatar.youtube { box-shadow: 0 0 0 2px var(--yt); }
+.avatar.twitch { box-shadow: 0 0 0 2px var(--tw); }
 .channel-card .removeFav {
   background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px;
 }

@@ -97,7 +97,7 @@ function renderLiveAlertBar() {
   for (const alert of liveAlerts) {
     const chip = el("div", { class: "live-alert-chip", title: `${alert.name} が配信を開始しました。クリックで開きます。` }, [
       alert.avatar
-        ? el("img", { class: "avatar", src: alert.avatar, alt: "" })
+        ? el("img", { class: `avatar ${alert.platform}`, src: alert.avatar, alt: "" })
         : el("span", { class: `platform-dot ${alert.platform}` }),
       el("span", { class: "name" }, alert.name),
       el("span", { class: "live-tag" }, "LIVE"),
@@ -736,7 +736,7 @@ function buildFavoriteCard(fav) {
 
   const card = el("div", { class: "channel-card" }, [
     fav.avatar
-      ? el("img", { class: "avatar", src: fav.avatar, alt: "" })
+      ? el("img", { class: `avatar ${fav.platform}`, src: fav.avatar, alt: "" })
       : el("span", { class: `platform-dot ${fav.platform}` }),
     el("div", { class: "meta" }, [
       el("div", { class: "name", title: fav.name || fallbackLabel(fav.target) }, fav.name || fallbackLabel(fav.target)),
