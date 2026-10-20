@@ -866,7 +866,13 @@ async function fetchArchiveItems(fav) {
     if (fav.target.idType !== "channelId") throw new Error("このチャンネルはAPIキーでの解決が必要です。");
     if (!hasYoutubeApiKey()) throw new Error("設定画面でYouTube APIキーを登録してください。");
     const { items } = await fetchYtArchive(fav.target.id);
-    return items.map((v) => ({ title: v.title, thumbnail: v.thumbnail, target: { platform: "youtube", mode: "video", id: v.videoId } }));
+    // liveChat: "replay" tells chat.js to embed YouTube's chat *replay*
+    // (only meaningful for videos that were actually live streams -- a
+    // regular pre-recorded upload never had a chat to replay) instead of
+    // the live-chat embed, which otherwise shows "このライブストリームでは
+    // チャットは無効です" for anything that isn't currently live. See
+    // addVideoFromArchive below / chat.js.
+    return items.map((v) => ({ title: v.title, thumbnail: v.thumbnail, target: { platform: "youtube", mode: "video", id: v.videoId, liveChat: "replay" } }));
   }
   if (fav.platform === "twitch") {
     if (!isTwitchSignedIn()) throw new Error("Twitchにログインしてください。");
