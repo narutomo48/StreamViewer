@@ -28,10 +28,20 @@ const AD_GUARD_MS = 6000;
 
 let canvasEl, canvasWrapEl, emptyStateEl, autoArrangeBtn;
 
-// Auto-arrange cycles through a fixed set of column counts each time the
-// button is pressed (1 -> 2 -> 3 -> 1 -> ...), instead of always picking
-// the "best fit" column count automatically.
-const AUTO_ARRANGE_COLS_CYCLE = [1, 2, 3];
+// Auto-arrange cycles through a fixed set of layout templates each time the
+// button is pressed, instead of always picking a single "best fit" grid.
+// Each template is a distinct shape -- a uniform grid at N columns, a
+// "spotlight" with one panel enlarged and the rest in a strip along one
+// edge, or everything in a single row -- see the *Layout functions below for
+// how each one is actually computed.
+const AUTO_ARRANGE_TEMPLATES = [
+  { key: "grid-1", label: "グリッド (1列)" },
+  { key: "grid-2", label: "グリッド (2列)" },
+  { key: "grid-3", label: "グリッド (3列)" },
+  { key: "spotlight-bottom", label: "メイン+下段" },
+  { key: "spotlight-right", label: "メイン+右列" },
+  { key: "row", label: "横一列" },
+];
 let autoArrangeCycleIndex = 0;
 const instances = new Map(); // panelId -> { root, videoBox, chatBox, player, headerVolume, muteBtn, chatBtn, destroyed, isChatOnly }
 
@@ -139,41 +149,89 @@ export function togglePanelChat(id) {
   });
 }
 
-// Tiles panels edge-to-edge (no gap between them, no outer margin) so the
-// grid reads like a real multiviewer wall -- only each panel's 1px border
-// separates neighbors. (GAP is still used elsewhere -- organic placement of
-// newly-added panels, and positioning a detached chat next to its source --
-// just not here.)
+// Cycles through AUTO_ARRANGE_TEMPLATES, laying every open panel out edge-to
+// -edge (no gap, no outer margin) so it reads like a real multiviewer wall --
+// only each panel's 1px border separates neighbors. (GAP is still used
+// elsewhere -- organic placement of newly-added panels, and positioning a
+// detached chat next to its source -- just not here.)
 export function autoArrange() {
   const state = getState();
   const panels = state.panels;
   if (!panels.length) return;
 
-  const desiredCols = AUTO_ARRANGE_COLS_CYCLE[autoArrangeCycleIndex];
-  autoArrangeCycleIndex = (autoArrangeCycleIndex + 1) % AUTO_ARRANGE_COLS_CYCLE.length;
+  const template = AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex];
+  autoArrangeCycleIndex = (autoArrangeCycleIndex + 1) % AUTO_ARRANGE_TEMPLATES.length;
 
   const wrapW = Math.max(canvasWrapEl.clientWidth, DEFAULT_W);
-  const cols = Math.max(1, Math.min(panels.length, desiredCols));
-  const rows = Math.ceil(panels.length / cols);
-  const tileW = Math.floor(wrapW / cols);
   const wrapH = Math.max(canvasWrapEl.clientHeight, DEFAULT_H);
-  const tileH = Math.max(MIN_H, Math.floor(wrapH / rows));
+
+  let placements;
+  switch (template.key) {
+    case "grid-1": placements = gridLayout(panels, 1, wrapW, wrapH); break;
+    case "grid-2": placements = gridLayout(panels, 2, wrapW, wrapH); break;
+    case "grid-3": placements = gridLayout(panels, 3, wrapW, wrapH); break;
+    case "row": placements = gridLayout(panels, panels.length, wrapW, wrapH); break;
+    case "spotlight-bottom": placements = spotlightLayout(panels, wrapW, wrapH, "bottom"); break;
+    case "spotlight-right": placements = spotlightLayout(panels, wrapW, wrapH, "right"); break;
+    default: placements = gridLayout(panels, 2, wrapW, wrapH);
+  }
 
   update((s) => {
-    s.panels.forEach((p, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      p.x = col * tileW;
-      p.y = row * tileH;
-      p.w = tileW;
-      p.h = tileH;
-    });
+    for (const pl of placements) {
+      const p = s.panels.find((x) => x.id === pl.id);
+      if (p) { p.x = pl.x; p.y = pl.y; p.w = pl.w; p.h = pl.h; }
+    }
   });
 
   if (autoArrangeBtn) {
-    autoArrangeBtn.textContent = `自動整列 (${cols}列)`;
-    autoArrangeBtn.title = `自動整列 -- 現在${cols}列。もう一度押すと${AUTO_ARRANGE_COLS_CYCLE[autoArrangeCycleIndex]}列に切り替わります`;
+    const next = AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex];
+    autoArrangeBtn.textContent = `自動整列 (${template.label})`;
+    autoArrangeBtn.title = `自動整列 -- 現在「${template.label}」。もう一度押すと「${next.label}」に切り替わります`;
   }
+}
+
+// Uniform desiredCols x rows grid. panels.length cols (via the "row"
+// template) collapses rows to 1, giving a single horizontal strip.
+function gridLayout(panels, desiredCols, wrapW, wrapH) {
+  const cols = Math.max(1, Math.min(panels.length, desiredCols));
+  const rows = Math.ceil(panels.length / cols);
+  const tileW = Math.floor(wrapW / cols);
+  const tileH = Math.max(MIN_H, Math.floor(wrapH / rows));
+  return panels.map((p, i) => ({
+    id: p.id,
+    x: (i % cols) * tileW,
+    y: Math.floor(i / cols) * tileH,
+    w: tileW,
+    h: tileH,
+  }));
+}
+
+// One enlarged "main" panel plus the rest lined up in an equal strip along
+// one edge. The main panel is whichever is currently frontmost (highest z --
+// i.e. whatever the user last clicked or dragged), so focusing a favorite
+// panel before pressing auto-arrange is what enlarges it. With only one
+// panel open this just falls back to grid-1 (nothing to put in the strip).
+function spotlightLayout(panels, wrapW, wrapH, side) {
+  if (panels.length === 1) return gridLayout(panels, 1, wrapW, wrapH);
+
+  const main = panels.reduce((a, b) => ((b.z || 0) > (a.z || 0) ? b : a));
+  const rest = panels.filter((p) => p.id !== main.id);
+  const placements = [];
+
+  if (side === "bottom") {
+    const mainH = Math.max(MIN_H, Math.floor(wrapH * 0.68));
+    const stripH = Math.max(MIN_H, wrapH - mainH);
+    const tileW = Math.floor(wrapW / rest.length);
+    placements.push({ id: main.id, x: 0, y: 0, w: wrapW, h: mainH });
+    rest.forEach((p, i) => placements.push({ id: p.id, x: i * tileW, y: mainH, w: tileW, h: stripH }));
+  } else { // "right"
+    const mainW = Math.max(MIN_W, Math.floor(wrapW * 0.68));
+    const stripW = Math.max(MIN_W, wrapW - mainW);
+    const tileH = Math.floor(wrapH / rest.length);
+    placements.push({ id: main.id, x: 0, y: 0, w: mainW, h: wrapH });
+    rest.forEach((p, i) => placements.push({ id: p.id, x: mainW, y: i * tileH, w: stripW, h: Math.max(MIN_H, tileH) }));
+  }
+  return placements;
 }
 
 function computeInitialPosition(index, w = DEFAULT_W, h = DEFAULT_H) {
@@ -193,12 +251,10 @@ function reconcile(state) {
   canvasEl.classList.toggle("has-panels", panels.length > 0);
 
   const liveIds = new Set(panels.map((p) => p.id));
-  let anyRemoved = false;
   for (const [id, inst] of instances) {
     if (!liveIds.has(id)) {
       destroyInstance(inst);
       instances.delete(id);
-      anyRemoved = true;
     }
   }
 
@@ -212,26 +268,24 @@ function reconcile(state) {
     }
   }
 
-  // Closing one panel can occasionally knock the audio out of OTHER still-
-  // open panels until THEY are closed and reopened -- removing an iframe
-  // from the page seems to sometimes disturb sibling iframes' internal audio
-  // state via the browser/embed APIs, not anything this app's own JS
-  // controls directly (other multiviewer tools built on the same embeds hit
-  // this too). Just re-asserting volume/mute through the player APIs (an
-  // earlier attempt at this) wasn't enough to reliably bring the audio back
-  // -- whatever gets disturbed lives below that API, in the iframe's own
-  // internal playback state. The one thing confirmed to fix it is closing
-  // every panel and reopening them, which recreates each player's iframe
-  // from scratch -- so do that automatically for the panels that are still
-  // here instead of making the user close and reopen everything by hand.
-  // There's no reliable way to tell which specific survivor actually lost
-  // audio, so every surviving stream panel gets remounted; this costs each
-  // of them a brief reload of their live video, matching what manually
-  // closing and reopening already costs.
-  if (anyRemoved) remountPlayers(panels);
-
   syncStackOrder(panels);
   updateCanvasExtent(panels);
+}
+
+// Closing one panel can occasionally knock the audio out of OTHER still-open
+// panels until THEY are closed and reopened -- removing an iframe from the
+// page seems to sometimes disturb sibling iframes' internal audio state via
+// the browser/embed APIs, not anything this app's own JS controls directly
+// (other multiviewer tools built on the same embeds hit this too). This used
+// to run automatically on every panel close, remounting every surviving
+// player -- but that meant EVERY close reloaded EVERY other open stream
+// (losing their playback position/chat scroll) whether or not anything had
+// actually gone silent, which was worse than the bug for anyone with more
+// than a couple of panels open. It's now manual instead: call this (wired to
+// the topbar's "更新" button) to reopen every currently displayed panel on
+// demand, same as closing and reopening each one by hand would.
+export function reloadAllPanels() {
+  remountPlayers(getState().panels);
 }
 
 function remountPlayers(panels) {
