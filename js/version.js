@@ -3,4 +3,4 @@
 // app name specifically so that, right after a push, it's easy to tell
 // whether the browser (or GitHub Pages' CDN) is actually serving the latest
 // code yet, instead of guessing from behavior alone.
-export const APP_VERSION = "2026.10.20.4";
+export const APP_VERSION = "2026.10.24.1";
