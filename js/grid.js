@@ -45,6 +45,44 @@ const AUTO_ARRANGE_TEMPLATES = [
 let autoArrangeCycleIndex = 0;
 const instances = new Map(); // panelId -> { root, videoBox, chatBox, player, headerVolume, muteBtn, chatBtn, destroyed, isChatOnly }
 
+// Position/size swap (⇄ button in each panel's header): lets the user trade
+// places between two panels -- e.g. pull a chat pane out of an oversized
+// "main" spotlight slot and put a stream there instead -- without having to
+// drag/resize anything by hand. This is purely a transient UI selection (not
+// part of the persisted panel state), so it's tracked here as plain module
+// state and painted directly onto the DOM rather than going through
+// update()/reconcile().
+let swapSourceId = null;
+
+function requestSwap(panelId) {
+  if (swapSourceId && swapSourceId !== panelId) {
+    const sourceId = swapSourceId;
+    swapSourceId = null;
+    setSwapPending(sourceId, false);
+    update((s) => {
+      const a = s.panels.find((p) => p.id === sourceId);
+      const b = s.panels.find((p) => p.id === panelId);
+      if (!a || !b) return;
+      const ax = a.x, ay = a.y, aw = a.w, ah = a.h;
+      a.x = b.x; a.y = b.y; a.w = b.w; a.h = b.h;
+      b.x = ax; b.y = ay; b.w = aw; b.h = ah;
+    });
+    return;
+  }
+  if (swapSourceId === panelId) {
+    swapSourceId = null;
+    setSwapPending(panelId, false);
+    return;
+  }
+  swapSourceId = panelId;
+  setSwapPending(panelId, true);
+}
+
+function setSwapPending(panelId, pending) {
+  const inst = instances.get(panelId);
+  if (inst) inst.root.classList.toggle("swap-pending", pending);
+}
+
 export function initGrid() {
   canvasEl = document.getElementById("canvas");
   canvasWrapEl = document.getElementById("canvasWrap");
@@ -118,6 +156,7 @@ export function detachChat(panelId) {
 }
 
 export function removePanel(id) {
+  if (swapSourceId === id) swapSourceId = null; // closing a panel mid-swap-selection cancels it
   update((s) => { s.panels = s.panels.filter((p) => p.id !== id); });
 }
 
@@ -161,6 +200,10 @@ export function autoArrange() {
 
   const template = AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex];
   autoArrangeCycleIndex = (autoArrangeCycleIndex + 1) % AUTO_ARRANGE_TEMPLATES.length;
+
+  // Any pending swap (⇄) selection is about to be invalidated by the
+  // reshuffle below -- clear it rather than leave a stale highlighted panel.
+  if (swapSourceId) { setSwapPending(swapSourceId, false); swapSourceId = null; }
 
   const wrapW = Math.max(canvasWrapEl.clientWidth, DEFAULT_W);
   const wrapH = Math.max(canvasWrapEl.clientHeight, DEFAULT_H);
@@ -209,12 +252,21 @@ function gridLayout(panels, desiredCols, wrapW, wrapH) {
 // One enlarged "main" panel plus the rest lined up in an equal strip along
 // one edge. The main panel is whichever is currently frontmost (highest z --
 // i.e. whatever the user last clicked or dragged), so focusing a favorite
-// panel before pressing auto-arrange is what enlarges it. With only one
-// panel open this just falls back to grid-1 (nothing to put in the strip).
+// panel before pressing auto-arrange is what enlarges it. Standalone chat
+// panels (see detachChat) are skipped when picking the main panel -- a chat
+// pane blown up to spotlight size is rarely what anyone wants -- unless
+// every open panel is a chat panel, in which case there's nothing else to
+// pick. With only one panel open this just falls back to grid-1 (nothing to
+// put in the strip). If the swap button (⇄) left a selection pending on a
+// panel that's about to move, clear it -- the highlighted panel staying put
+// while everything shuffles around it would be confusing.
 function spotlightLayout(panels, wrapW, wrapH, side) {
   if (panels.length === 1) return gridLayout(panels, 1, wrapW, wrapH);
 
-  const main = panels.reduce((a, b) => ((b.z || 0) > (a.z || 0) ? b : a));
+  const candidates = panels.some((p) => p.kind !== "chat")
+    ? panels.filter((p) => p.kind !== "chat")
+    : panels;
+  const main = candidates.reduce((a, b) => ((b.z || 0) > (a.z || 0) ? b : a));
   const rest = panels.filter((p) => p.id !== main.id);
   const placements = [];
 
@@ -409,6 +461,12 @@ function mountPanel(panel) {
     onclick: () => detachChat(panel.id),
   }, "🗗");
 
+  const swapBtn = el("button", {
+    class: "ctrl-btn",
+    title: "位置を入れ替え -- もう一度このボタンを押して別のパネルの⇄を押すと、配置(位置・サイズ)だけを入れ替えます",
+    onclick: () => requestSwap(panel.id),
+  }, "⇄");
+
   const closeBtn = el("button", {
     class: "ctrl-btn", title: "閉じる",
     onclick: () => removePanel(panel.id),
@@ -422,6 +480,7 @@ function mountPanel(panel) {
     el("span", { class: "volume-wrap" }, [muteBtn, volumeInput]),
     chatBtn,
     detachChatBtn,
+    swapBtn,
     closeBtn,
   ]);
 
@@ -455,6 +514,11 @@ function mountPanel(panel) {
 // draggable/resizable/closable like any panel, but no video player, volume
 // controls, or chat-toggle (it IS the chat).
 function mountChatPanel(root, panel) {
+  const swapBtn = el("button", {
+    class: "ctrl-btn",
+    title: "位置を入れ替え -- もう一度このボタンを押して別のパネルの⇄を押すと、配置(位置・サイズ)だけを入れ替えます",
+    onclick: () => requestSwap(panel.id),
+  }, "⇄");
   const closeBtn = el("button", {
     class: "ctrl-btn", title: "閉じる",
     onclick: () => removePanel(panel.id),
@@ -463,6 +527,7 @@ function mountChatPanel(root, panel) {
   const header = el("div", { class: "panel-header" }, [
     platformDot(panel.target.platform),
     titleEl,
+    swapBtn,
     closeBtn,
   ]);
 

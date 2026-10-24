@@ -339,6 +339,16 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
 }
 .stream-panel.dragging, .stream-panel.resizing { z-index: 50 !important; box-shadow: 0 8px 28px rgba(0,0,0,.55); }
 .stream-panel.focused { border-color: var(--accent-2); }
+/* ⇄ swap-position selection pending -- see requestSwap() in grid.js */
+.stream-panel.swap-pending {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2), 0 0 10px 1px rgba(124, 139, 255, 0.55);
+  animation: swap-glow 1.2s ease-in-out infinite;
+}
+@keyframes swap-glow {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent-2), 0 0 6px 1px rgba(124, 139, 255, 0.35); }
+  50% { box-shadow: 0 0 0 1px var(--accent-2), 0 0 14px 3px rgba(124, 139, 255, 0.7); }
+}
 
 .panel-header {
   flex: 0 0 auto;
