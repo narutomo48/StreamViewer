@@ -60,6 +60,26 @@ export async function createYoutubePlayer(container, target, opts = {}) {
       setVolume(v) { try { player.setVolume(v); if (v > 0) player.unMute(); } catch {} },
       setMuted(m) { try { if (m) player.mute(); else player.unMute(); } catch {} },
       destroy() { try { player.destroy(); } catch {} },
+      // The next three exist so grid.js can watch for a live stream that has
+      // silently stalled (see the stall watchdog there) and offer a manual
+      // "jump to live" button -- see seekToLive below for why that's needed
+      // at all.
+      getCurrentTime() { try { return player.getCurrentTime(); } catch { return null; } },
+      getPlayerState() { try { return player.getPlayerState(); } catch { return null; } },
+      // For a live broadcast, getDuration() keeps returning "how far the
+      // broadcast has gotten so far", i.e. the live edge -- there's no
+      // dedicated "seek to live" call in the IFrame API, so seeking to that
+      // value is the standard trick. This matters because YouTube's OWN
+      // reconnect/reload control (shown over the thumbnail when a live
+      // embed stalls) restarts playback from 0:00 instead of rejoining live,
+      // which is the actual bug this method works around.
+      seekToLive() {
+        try {
+          const d = player.getDuration();
+          if (typeof d === "number" && isFinite(d) && d > 0) player.seekTo(d, true);
+          player.playVideo();
+        } catch {}
+      },
     };
   }
 
@@ -99,5 +119,19 @@ export async function createYoutubePlayer(container, target, opts = {}) {
     setVolume(v) { try { apiPlayer && apiPlayer.setVolume(v); if (v > 0) apiPlayer && apiPlayer.unMute(); } catch {} },
     setMuted(m) { try { apiPlayer && (m ? apiPlayer.mute() : apiPlayer.unMute()); } catch {} },
     destroy() { try { apiPlayer && apiPlayer.destroy(); } catch {} try { iframe.remove(); } catch {} },
+    // See the equivalent block in the "video" mode branch above for why
+    // these exist. apiPlayer can be null here (the JS API adoption of a
+    // plain channel-embed iframe isn't guaranteed) -- callers already guard
+    // on these being functions, so returning null/no-op is fine.
+    getCurrentTime() { try { return apiPlayer ? apiPlayer.getCurrentTime() : null; } catch { return null; } },
+    getPlayerState() { try { return apiPlayer ? apiPlayer.getPlayerState() : null; } catch { return null; } },
+    seekToLive() {
+      if (!apiPlayer) return;
+      try {
+        const d = apiPlayer.getDuration();
+        if (typeof d === "number" && isFinite(d) && d > 0) apiPlayer.seekTo(d, true);
+        apiPlayer.playVideo();
+      } catch {}
+    },
   };
 }

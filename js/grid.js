@@ -83,6 +83,60 @@ function setSwapPending(panelId, pending) {
   if (inst) inst.root.classList.toggle("swap-pending", pending);
 }
 
+// ---------------- stuck-live-stream watchdog ----------------
+//
+// YouTube's embedded (IFrame API) player doesn't reliably self-recover when
+// a live broadcast's connection hiccups -- unlike the full youtube.com
+// watch page, the embed can just silently stop advancing, showing the
+// thumbnail with its own reload icon over it, rather than quietly
+// reconnecting. It happens more on some channels than others (shakier
+// upload/encoder on the broadcaster's end -> more reconnect events) and is
+// otherwise outside this app's control -- but we CAN detect "this panel's
+// playback position hasn't moved in a while" and recover it automatically
+// by remounting just that one panel, which (unlike clicking YouTube's own
+// reload icon, which restarts at 0:00) rejoins a live broadcast at the live
+// edge same as opening it fresh.
+//
+// This deliberately leaves a genuinely paused player alone: getPlayerState()
+// reporting PAUSED (2) is the one state YouTube uses for an actual user
+// click on the embed's own pause button (visibly: a play-triangle over the
+// paused frame, as opposed to the thumbnail+reload-icon of a stuck stream),
+// so it's excluded from the stall check below.
+const YT_STATE_PAUSED = 2;
+const STALL_POLL_MS = 8000; // how often we sample playback position
+const STALL_THRESHOLD_MS = 20000; // no progress for this long (while not paused) -> auto-recover
+
+function startStallWatch(inst, panel) {
+  stopStallWatch(inst);
+  let lastTime = null;
+  let stuckSinceMs = null;
+  inst.stallTimer = setInterval(() => {
+    const player = inst.player;
+    if (inst.destroyed || !player || typeof player.getCurrentTime !== "function") return;
+    if (typeof player.getPlayerState === "function" && player.getPlayerState() === YT_STATE_PAUSED) {
+      lastTime = null; stuckSinceMs = null; // user-paused (or looks like it) -- leave it alone
+      return;
+    }
+    const t = player.getCurrentTime();
+    if (typeof t !== "number") return;
+    if (lastTime !== null && Math.abs(t - lastTime) < 0.5) {
+      if (!stuckSinceMs) stuckSinceMs = Date.now();
+      if (Date.now() - stuckSinceMs >= STALL_THRESHOLD_MS) {
+        console.warn(`[StreamViewer] "${panel.title}" の再生が停止しているため自動的に再接続します。`);
+        remountOnePanel(panel.id, { seekToLiveOnReady: true });
+        return; // remountOnePanel already stops/restarts this watchdog
+      }
+    } else {
+      stuckSinceMs = null;
+    }
+    lastTime = t;
+  }, STALL_POLL_MS);
+}
+
+function stopStallWatch(inst) {
+  if (inst.stallTimer) { clearInterval(inst.stallTimer); inst.stallTimer = null; }
+}
+
 export function initGrid() {
   canvasEl = document.getElementById("canvas");
   canvasWrapEl = document.getElementById("canvasWrap");
@@ -337,19 +391,30 @@ function reconcile(state) {
 // the topbar's "更新" button) to reopen every currently displayed panel on
 // demand, same as closing and reopening each one by hand would.
 export function reloadAllPanels() {
-  remountPlayers(getState().panels);
+  for (const panel of getState().panels) remountOnePanel(panel.id);
 }
 
-function remountPlayers(panels) {
-  for (const panel of panels) {
-    const inst = instances.get(panel.id);
-    if (!inst || inst.isChatOnly) continue;
-    if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
-    try { inst.player && inst.player.destroy(); } catch {}
-    inst.player = null;
-    inst.videoBox.innerHTML = "";
-    mountPlayer(inst, panel);
-  }
+// Destroys and recreates a single panel's player in place (same effect as
+// closing and reopening just that one panel). Used both by the "更新"
+// button above (looped over every panel) and by the stall watchdog, which
+// calls this for just the one panel that's stuck.
+//
+// seekToLiveOnReady is only passed by the stall watchdog: a stream that
+// just auto-recovered from being stuck should land back at the live edge,
+// not wherever the fresh embed happens to start -- but forcing that for
+// every reload (e.g. the manual "更新" button, which also touches panels
+// that are just paused VODs) would wrongly yank a VOD to its very end, so
+// it's opt-in per call rather than automatic inside this function.
+function remountOnePanel(panelId, { seekToLiveOnReady = false } = {}) {
+  const panel = getState().panels.find((p) => p.id === panelId);
+  const inst = instances.get(panelId);
+  if (!panel || !inst || inst.isChatOnly) return;
+  if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
+  stopStallWatch(inst);
+  try { inst.player && inst.player.destroy(); } catch {}
+  inst.player = null;
+  inst.videoBox.innerHTML = "";
+  mountPlayer(inst, panel, { seekToLiveOnReady });
 }
 
 // panel.z (from nextZ() in state.js) is a counter that only ever grows, and
@@ -383,6 +448,7 @@ function updateCanvasExtent(panels) {
 function destroyInstance(inst) {
   inst.destroyed = true;
   if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
+  stopStallWatch(inst);
   try { inst.player && inst.player.destroy(); } catch {}
   try { inst.root.remove(); } catch {}
 }
@@ -474,15 +540,29 @@ function mountPanel(panel) {
 
   const titleEl = el("span", { class: "title" }, panel.title);
 
-  const header = el("div", { class: "panel-header" }, [
+  const headerChildren = [
     platformDot(panel.target.platform),
     titleEl,
     el("span", { class: "volume-wrap" }, [muteBtn, volumeInput]),
-    chatBtn,
-    detachChatBtn,
-    swapBtn,
-    closeBtn,
-  ]);
+  ];
+
+  // YouTube-only: a manual escape hatch for the "stream silently stalled"
+  // case the watchdog above also handles automatically -- covers the gap
+  // before the watchdog's own threshold fires, and also undoes the 0:00
+  // restart YouTube's own reload-the-thumbnail control causes, in case the
+  // user ends up clicking that one directly instead.
+  if (panel.target.platform === "youtube") {
+    const skipLiveBtn = el("button", {
+      class: "ctrl-btn",
+      title: "配信の最新(ライブ)位置まで進める -- 再接続後や巻き戻ってしまった時に",
+      onclick: () => { try { inst.player && inst.player.seekToLive && inst.player.seekToLive(); } catch {} },
+    }, "⏭");
+    headerChildren.push(skipLiveBtn);
+  }
+
+  headerChildren.push(chatBtn, detachChatBtn, swapBtn, closeBtn);
+
+  const header = el("div", { class: "panel-header" }, headerChildren);
 
   const videoBox = el("div", { class: "panel-video" });
   const chatBox = el("div", { class: "panel-chat" });
@@ -498,7 +578,7 @@ function mountPanel(panel) {
   const inst = {
     root, header, videoBox, chatBox, body, volumeInput, muteBtn, chatBtn,
     player: null, lastShowChat: panel.showChat, lastTargetKey: targetKey(panel.target),
-    destroyed: false, isChatOnly: false,
+    destroyed: false, isChatOnly: false, stallTimer: null,
   };
 
   attachDrag(root, header, panel.id);
@@ -554,7 +634,7 @@ function mountChatPanel(root, panel) {
   return inst;
 }
 
-function mountPlayer(inst, panel) {
+function mountPlayer(inst, panel, { seekToLiveOnReady = false } = {}) {
   const target = panel.target;
   // See AD_GUARD_MS above -- force a silent start even for a panel the user
   // wants audible, then restore its real volume/mute setting shortly after.
@@ -597,6 +677,15 @@ function mountPlayer(inst, panel) {
     if (inst.destroyed) { try { handle.destroy(); } catch {} return; }
     inst.player = handle;
 
+    if (seekToLiveOnReady && typeof handle.seekToLive === "function") {
+      // A beat after "ready" -- right at ready, a freshly (re)loaded live
+      // embed's getDuration() can still read 0/NaN before it's buffered
+      // enough to know where the live edge actually is, which would make
+      // seekToLive() silently skip the seek and just resume wherever the
+      // fresh embed happened to land.
+      setTimeout(() => { if (!inst.destroyed) try { handle.seekToLive(); } catch {} }, 1500);
+    }
+
     if (guardAgainstAds) {
       inst.adGuardTimer = setTimeout(() => {
         inst.adGuardTimer = null;
@@ -604,6 +693,12 @@ function mountPlayer(inst, panel) {
         try { handle.setVolume(panel.volume); handle.setMuted(panel.muted); } catch {}
       }, AD_GUARD_MS);
     }
+
+    // Only meaningful for players that expose getCurrentTime/getPlayerState
+    // (currently just YouTube's -- see players/youtube.js); harmlessly
+    // never fires for anything else since the watchdog itself checks for
+    // those methods before doing anything.
+    startStallWatch(inst, panel);
   }).catch((err) => {
     console.warn(err);
     if (!inst.destroyed) showVideoFallback(inst, "プレイヤーの読み込みに失敗しました。");
@@ -649,6 +744,7 @@ function updateInstance(inst, panel) {
   if (key !== inst.lastTargetKey) {
     // Target changed (shouldn't normally happen post-creation) -- remount player.
     inst.lastTargetKey = key;
+    stopStallWatch(inst);
     try { inst.player && inst.player.destroy(); } catch {}
     inst.videoBox.innerHTML = "";
     mountPlayer(inst, panel);
