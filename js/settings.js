@@ -11,6 +11,7 @@ export function initSettings() {
   const ytClient = qs("#settingYtClientId");
   const twClient = qs("#settingTwClientId");
   const twRedirect = qs("#settingTwRedirectUri");
+  const adGuard = qs("#settingAdGuardEnabled");
 
   function open() {
     const s = getState().settings;
@@ -18,6 +19,7 @@ export function initSettings() {
     ytClient.value = s.youtubeClientId || "";
     twClient.value = s.twitchClientId || "";
     twRedirect.value = s.twitchRedirectUri || (location.origin + location.pathname);
+    adGuard.checked = s.adGuardEnabled !== false;
     modal.hidden = false;
   }
   function close() { modal.hidden = true; }
@@ -32,6 +34,7 @@ export function initSettings() {
       s.settings.youtubeClientId = ytClient.value.trim();
       s.settings.twitchClientId = twClient.value.trim();
       s.settings.twitchRedirectUri = twRedirect.value.trim();
+      s.settings.adGuardEnabled = adGuard.checked;
     });
     toast("設定を保存しました。");
     close();

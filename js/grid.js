@@ -103,8 +103,12 @@ function setSwapPending(panelId, pending) {
 // paused frame, as opposed to the thumbnail+reload-icon of a stuck stream),
 // so it's excluded from the stall check below.
 const YT_STATE_PAUSED = 2;
-const STALL_POLL_MS = 8000; // how often we sample playback position
-const STALL_THRESHOLD_MS = 20000; // no progress for this long (while not paused) -> auto-recover
+const STALL_POLL_MS = 3000; // how often we sample playback position
+const STALL_THRESHOLD_MS = 8000; // no progress for this long (while not paused) -> auto-recover
+// Detection needs at least two samples showing no movement to be sure it's
+// really stuck (one alone could just be mid-poll-interval), so the actual
+// reaction time is roughly STALL_THRESHOLD_MS plus up to one STALL_POLL_MS,
+// not exactly STALL_THRESHOLD_MS on the dot.
 
 function startStallWatch(inst, panel) {
   stopStallWatch(inst);
@@ -123,7 +127,7 @@ function startStallWatch(inst, panel) {
       if (!stuckSinceMs) stuckSinceMs = Date.now();
       if (Date.now() - stuckSinceMs >= STALL_THRESHOLD_MS) {
         console.warn(`[StreamViewer] "${panel.title}" の再生が停止しているため自動的に再接続します。`);
-        remountOnePanel(panel.id, { seekToLiveOnReady: true });
+        remountOnePanel(panel.id, { seekToLiveOnReady: true, skipAdGuard: true });
         return; // remountOnePanel already stops/restarts this watchdog
       }
     } else {
@@ -399,13 +403,16 @@ export function reloadAllPanels() {
 // button above (looped over every panel) and by the stall watchdog, which
 // calls this for just the one panel that's stuck.
 //
-// seekToLiveOnReady is only passed by the stall watchdog: a stream that
-// just auto-recovered from being stuck should land back at the live edge,
-// not wherever the fresh embed happens to start -- but forcing that for
-// every reload (e.g. the manual "更新" button, which also touches panels
-// that are just paused VODs) would wrongly yank a VOD to its very end, so
-// it's opt-in per call rather than automatic inside this function.
-function remountOnePanel(panelId, { seekToLiveOnReady = false } = {}) {
+// seekToLiveOnReady and skipAdGuard are only passed by the stall watchdog:
+// a stream that just auto-recovered from being stuck should land back at
+// the live edge, not wherever the fresh embed happens to start, and
+// doesn't need the pre-roll-ad mute guard (an already-live broadcast
+// reconnecting isn't going to serve a fresh pre-roll ad the way a newly
+// opened panel might). Forcing either of those for every reload -- e.g.
+// the manual "更新" button, which also touches panels that are just paused
+// VODs, or freshly-opened panels that genuinely might have a pre-roll ad
+// -- would be wrong there, so both are opt-in per call.
+function remountOnePanel(panelId, { seekToLiveOnReady = false, skipAdGuard = false } = {}) {
   const panel = getState().panels.find((p) => p.id === panelId);
   const inst = instances.get(panelId);
   if (!panel || !inst || inst.isChatOnly) return;
@@ -414,7 +421,7 @@ function remountOnePanel(panelId, { seekToLiveOnReady = false } = {}) {
   try { inst.player && inst.player.destroy(); } catch {}
   inst.player = null;
   inst.videoBox.innerHTML = "";
-  mountPlayer(inst, panel, { seekToLiveOnReady });
+  mountPlayer(inst, panel, { seekToLiveOnReady, skipAdGuard });
 }
 
 // panel.z (from nextZ() in state.js) is a counter that only ever grows, and
@@ -634,12 +641,17 @@ function mountChatPanel(root, panel) {
   return inst;
 }
 
-function mountPlayer(inst, panel, { seekToLiveOnReady = false } = {}) {
+function mountPlayer(inst, panel, { seekToLiveOnReady = false, skipAdGuard = false } = {}) {
   const target = panel.target;
   // See AD_GUARD_MS above -- force a silent start even for a panel the user
   // wants audible, then restore its real volume/mute setting shortly after.
-  // A panel the user already muted needs no guard (it's silent either way).
-  const guardAgainstAds = !panel.muted;
+  // A panel the user already muted needs no guard (it's silent either way),
+  // skipAdGuard opts a caller out entirely (see remountOnePanel above), and
+  // the ⚙ settings toggle lets the user turn this off altogether -- useful
+  // since whether YouTube's embed still shows pre-roll ads at all is up to
+  // YouTube and can change independently of this app.
+  const adGuardSettingOn = getState().settings.adGuardEnabled !== false;
+  const guardAgainstAds = adGuardSettingOn && !skipAdGuard && !panel.muted;
   const commonOpts = {
     volume: panel.volume,
     muted: guardAgainstAds ? true : panel.muted,

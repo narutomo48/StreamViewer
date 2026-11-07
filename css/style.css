@@ -439,6 +439,8 @@ fieldset { border: 1px solid var(--border); border-radius: 8px; display: flex; f
 legend { padding: 0 6px; font-size: 12px; color: var(--text-dim); }
 .modal-body label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-dim); }
 .modal-body input[type="text"] { width: 100%; }
+.modal-body label.toggle-row { flex-direction: row; align-items: flex-start; gap: 6px; cursor: pointer; }
+.modal-body label.toggle-row input[type="checkbox"] { margin: 2px 0 0; flex: 0 0 auto; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
 /* ---------- Toasts ---------- */

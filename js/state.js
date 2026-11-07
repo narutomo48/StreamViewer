@@ -21,6 +21,13 @@ const DEFAULT_STATE = {
     youtubeClientId: "",
     twitchClientId: "",
     twitchRedirectUri: "",
+    // Whether to force-mute a panel for its first few seconds to dodge a
+    // possible pre-roll ad (see AD_GUARD_MS in grid.js). Whether this is
+    // still needed at all depends on YouTube's own embed behavior, which
+    // can change without this app changing -- exposed as a toggle (⚙
+    // settings) rather than hardcoded so it doesn't need a code change
+    // every time that changes.
+    adGuardEnabled: true,
   },
   auth: {
     youtube: null, // { accessToken, expiresAt }
