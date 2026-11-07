@@ -172,25 +172,10 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
 .hint.error { color: #ff9d9d; }
 .hint.ok { color: #8fe3a6; }
 
-.sidebar-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-.tab-btn {
-  flex: 1;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  padding: 6px 4px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.tab-btn.active { background: var(--panel-2); color: var(--text); border-color: var(--accent-2); }
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
-
 .auth-row { display: flex; gap: 6px; margin-bottom: 8px; }
 .auth-row .btn { flex: 1; }
 
-.add-fav-form { display: flex; gap: 6px; margin-bottom: 10px; }
+.add-fav-form { display: flex; gap: 6px; margin-top: 10px; }
 .add-fav-form input { flex: 1; min-width: 0; }
 
 .channel-list { display: flex; flex-direction: column; gap: 6px; }

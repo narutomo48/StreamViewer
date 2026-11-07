@@ -42,7 +42,6 @@ export function initSidebar() {
   twAuthBtn = qs("#twAuthBtn");
   liveAlertBarEl = qs("#liveAlertBar");
 
-  wireTabs();
   wireAddByUrl();
   wireAddFavorite();
   wireAuthButtons();
@@ -182,20 +181,6 @@ async function checkTwitchLiveStatuses({ silent = false } = {}) {
   });
   renderFavorites();
   if (!silent) newlyLive.forEach(pushLiveAlert);
-}
-
-// -------- tabs --------
-function wireTabs() {
-  const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
-  tabBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      tabBtns.forEach((b) => b.classList.toggle("active", b === btn));
-      const tabId = btn.dataset.tab;
-      document.getElementById("favTab").classList.toggle("active", tabId === "favorites");
-      document.getElementById("archiveTab").classList.toggle("active", tabId === "archive");
-      if (tabId === "archive") renderArchiveTab();
-    });
-  });
 }
 
 // -------- add by URL (goes straight to the canvas) --------
@@ -423,7 +408,6 @@ function renderFavorites() {
       { class: "btn small", onclick: refreshLiveStatus, disabled: !!refreshProgressLabel },
       refreshProgressLabel || "🔄 ライブ状況を更新"
     ),
-    el("button", { class: "btn small", onclick: createGroup }, "＋ グループ"),
   ]);
   favListEl.appendChild(toolbar);
 
@@ -582,16 +566,6 @@ function buildUngroupedSection(members, showHeader) {
 }
 
 // -------- group management --------
-async function createGroup() {
-  const name = await askText("新しいグループ名を入力してください", "");
-  if (!name) return;
-  update((s) => {
-    if (!s.favoriteGroups) s.favoriteGroups = [];
-    s.favoriteGroups.push({ id: uid("grp"), name, collapsed: false });
-  });
-  renderFavorites();
-}
-
 async function renameGroup(groupId) {
   const group = (getState().favoriteGroups || []).find((g) => g.id === groupId);
   if (!group) return;
@@ -1045,16 +1019,3 @@ async function resolveTwitchUserIds(twFavs) {
   return getState().favorites.filter((f) => f.platform === "twitch" && f.target.userId).map((f) => f.target.userId);
 }
 
-// -------- archive tab (simple: reuses the inline-per-favorite expander) --------
-function renderArchiveTab() {
-  const archiveList = qs("#archiveList");
-  archiveList.innerHTML = "";
-  const { favorites } = getState();
-  if (!favorites.length) {
-    archiveList.appendChild(el("div", { class: "list-empty" }, "まずお気に入りにチャンネルを追加してください。"));
-    return;
-  }
-  archiveList.appendChild(el("div", { class: "list-note" },
-    "各チャンネルの🕘ボタンでアーカイブ一覧を開けます（お気に入りタブと共通です）。"));
-  for (const fav of favorites) archiveList.appendChild(buildFavoriteCard(fav));
-}

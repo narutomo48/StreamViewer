@@ -54,29 +54,19 @@
           <button type="submit" class="btn small primary">追加</button>
         </form>
         <div id="addUrlHint" class="hint"></div>
+
+        <form id="addFavoriteForm" class="add-fav-form">
+          <input id="addFavoriteInput" type="text" placeholder="お気に入りに追加するチャンネルURL" autocomplete="off" />
+          <button type="submit" class="btn small">追加</button>
+        </form>
       </div>
 
       <div class="sidebar-section">
-        <div class="sidebar-tabs">
-          <button class="tab-btn active" data-tab="favorites">お気に入り</button>
-          <button class="tab-btn" data-tab="archive">アーカイブ</button>
+        <div class="auth-row">
+          <button id="ytAuthBtn" class="btn small yt">YouTubeでログイン</button>
+          <button id="twAuthBtn" class="btn small tw">Twitchでログイン</button>
         </div>
-
-        <div id="favTab" class="tab-panel active">
-          <div class="auth-row">
-            <button id="ytAuthBtn" class="btn small yt">YouTubeでログイン</button>
-            <button id="twAuthBtn" class="btn small tw">Twitchでログイン</button>
-          </div>
-          <form id="addFavoriteForm" class="add-fav-form">
-            <input id="addFavoriteInput" type="text" placeholder="お気に入りに追加するチャンネルURL" autocomplete="off" />
-            <button type="submit" class="btn small">追加</button>
-          </form>
-          <div id="favList" class="channel-list"></div>
-        </div>
-
-        <div id="archiveTab" class="tab-panel">
-          <div id="archiveList" class="channel-list"></div>
-        </div>
+        <div id="favList" class="channel-list"></div>
       </div>
     </aside>
 
