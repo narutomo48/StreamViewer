@@ -104,17 +104,20 @@
       </p>
 
       <fieldset>
+        <legend>StreamViewer</legend>
+        <label class="toggle-row">
+          <input id="settingAdGuardEnabled" type="checkbox" />
+          再生開始時の広告よけミュート
+        </label>
+      </fieldset>
+
+      <fieldset>
         <legend>YouTube</legend>
         <label>YouTube Data API キー
           <input id="settingYtApiKey" type="text" placeholder="AIza..." autocomplete="off" />
         </label>
         <label>OAuth クライアントID (登録チャンネル一覧取得に必要)
           <input id="settingYtClientId" type="text" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off" />
-        </label>
-        <label class="toggle-row">
-          <input id="settingAdGuardEnabled" type="checkbox" />
-          再生開始時、最初の数秒を広告よけでミュートする(YouTube側の仕様変更で不要/邪魔に
-          感じる場合はオフにしてください。自動再接続時はこの設定に関わらず常にミュートしません)
         </label>
       </fieldset>
 
