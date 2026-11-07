@@ -43,14 +43,8 @@
   <div id="body">
     <aside id="sidebar">
       <div class="sidebar-section">
-        <div class="sidebar-title">配信を追加 (URL / ID)</div>
         <form id="addByUrlForm" class="add-url-form">
-          <input id="addByUrlInput" type="text" placeholder="YouTube/Twitch のURL・動画ID・チャンネル名 を貼り付け" autocomplete="off" />
-          <select id="addByUrlPlatformHint" title="URLが判別できない場合に使用するプラットフォーム">
-            <option value="auto">自動判別</option>
-            <option value="youtube">YouTube</option>
-            <option value="twitch">Twitch</option>
-          </select>
+          <input id="addByUrlInput" type="text" placeholder="配信追加URL" autocomplete="off" />
           <button type="submit" class="btn small primary">追加</button>
         </form>
         <div id="addUrlHint" class="hint"></div>

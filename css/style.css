@@ -165,9 +165,8 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
 .sidebar-section { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .sidebar-title { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
 
-.add-url-form { display: flex; flex-wrap: wrap; gap: 6px; }
-.add-url-form input[type="text"] { flex: 1 1 180px; min-width: 0; }
-.add-url-form select { flex: 0 0 auto; }
+.add-url-form { display: flex; gap: 6px; }
+.add-url-form input[type="text"] { flex: 1; min-width: 0; }
 .hint { font-size: 11px; color: var(--text-dim); margin-top: 6px; min-height: 1.2em; }
 .hint.error { color: #ff9d9d; }
 .hint.ok { color: #8fe3a6; }

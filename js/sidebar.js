@@ -187,14 +187,13 @@ async function checkTwitchLiveStatuses({ silent = false } = {}) {
 function wireAddByUrl() {
   const form = qs("#addByUrlForm");
   const input = qs("#addByUrlInput");
-  const hintSel = qs("#addByUrlPlatformHint");
   const hintEl = qs("#addUrlHint");
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const target = parseStreamInput(input.value, hintSel.value);
+    const target = parseStreamInput(input.value, "auto");
     if (!target) {
-      hintEl.textContent = "URL・ID を認識できませんでした。YouTube/Twitchの正しいURLか、プラットフォームを選択してください。";
+      hintEl.textContent = "URL・ID を認識できませんでした。YouTube/Twitchの正しいURLを貼り付けてください。";
       hintEl.className = "hint error";
       return;
     }
