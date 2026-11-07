@@ -103,8 +103,8 @@ function setSwapPending(panelId, pending) {
 // paused frame, as opposed to the thumbnail+reload-icon of a stuck stream),
 // so it's excluded from the stall check below.
 const YT_STATE_PAUSED = 2;
-const STALL_POLL_MS = 3000; // how often we sample playback position
-const STALL_THRESHOLD_MS = 8000; // no progress for this long (while not paused) -> auto-recover
+const STALL_POLL_MS = 2000; // how often we sample playback position
+const STALL_THRESHOLD_MS = 5000; // no progress for this long (while not paused) -> auto-recover
 // Detection needs at least two samples showing no movement to be sure it's
 // really stuck (one alone could just be mid-poll-interval), so the actual
 // reaction time is roughly STALL_THRESHOLD_MS plus up to one STALL_POLL_MS,
