@@ -59,6 +59,13 @@ export async function createTwitchPlayer(container, target, opts = {}) {
   player.addEventListener(Twitch.Player.READY, () => {
     try { player.setVolume(clamp01(volume / 100)); } catch {}
     try { player.setMuted(!!muted); } catch {}
+    // The `autoplay: true` constructor option is unreliable on Twitch's JS
+    // embed (unlike YouTube's IFrame API, which honors its own autoplay
+    // param consistently) -- it frequently still lands on Twitch's own
+    // click-to-play overlay instead of actually starting playback. An
+    // explicit play() call right after READY is the documented workaround
+    // and is harmless if it was already playing.
+    try { player.play(); } catch {}
     onReady && onReady();
   });
   if (onOffline) {
