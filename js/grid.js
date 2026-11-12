@@ -567,6 +567,19 @@ function mountPanel(panel) {
     headerChildren.push(skipLiveBtn);
   }
 
+  // Twitch-only, temporary debug button: manually fires the same
+  // "force a muted restart" recovery the automatic watchdog in
+  // players/twitch.js tries on its own, so we can see live what pressing it
+  // actually does for a panel that's stuck on Twitch's own paused overlay.
+  if (panel.target.platform === "twitch") {
+    const forcePlayBtn = el("button", {
+      class: "ctrl-btn",
+      title: "【検証用】強制的にミュート+再生を試みる",
+      onclick: () => { try { inst.player && inst.player.forcePlay && inst.player.forcePlay(); } catch {} },
+    }, "🛠▶");
+    headerChildren.push(forcePlayBtn);
+  }
+
   headerChildren.push(chatBtn, detachChatBtn, swapBtn, closeBtn);
 
   const header = el("div", { class: "panel-header" }, headerChildren);

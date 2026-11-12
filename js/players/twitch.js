@@ -39,8 +39,8 @@ function getTwitchParentList() {
 // actually reaches "Playing" within a few seconds, retries play() and -- as a
 // last resort -- tears down and recreates the whole player, since a fresh
 // instance sometimes succeeds where a stuck one won't.
-const STARTED_CHECK_DELAYS_MS = [2500, 5000]; // when to check "did it actually start playing yet"
-const MAX_RECREATE_ATTEMPTS = 2;
+const STARTED_CHECK_DELAYS_MS = [3000, 6500, 11000]; // when to check "did it actually start playing yet"
+const MAX_RECREATE_ATTEMPTS = 3;
 
 // target: { mode: "video", id } | { mode: "channel", login }
 export async function createTwitchPlayer(container, target, opts = {}) {
@@ -170,6 +170,17 @@ export async function createTwitchPlayer(container, target, opts = {}) {
       } catch {}
     },
     setMuted(m) { try { if (current) current.player.setMuted(!!m); } catch {} },
+    // Manual escape hatch for the "stuck on Twitch's own paused overlay"
+    // case, wired to a debug button in the panel header -- lets us (and the
+    // user) see live what pressing "force play" actually does, without
+    // waiting for the automatic retry timers above.
+    forcePlay() {
+      try {
+        if (!current) return;
+        current.player.setMuted(true);
+        current.player.play();
+      } catch {}
+    },
     destroy() { destroyed = true; clearCurrent(); },
   };
 }
