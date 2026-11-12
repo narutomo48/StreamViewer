@@ -10,7 +10,18 @@ import { buildChatPane } from "./chat.js";
 import { el, clamp } from "./utils/dom.js";
 
 const DEFAULT_W = 480;
-const DEFAULT_H = 300;
+// Twitch's embed refuses to (auto)play at all -- not a browser policy thing,
+// its OWN internal check -- below a minimum visible size ("minimum size
+// requirements and visibility are necessary for autoplay to begin", per
+// Twitch's embed docs: https://dev.twitch.tv/docs/embed/ -- at least
+// 400x300 for the player itself). The .panel-header bar (~35px: buttons +
+// padding + border) eats into a panel's total height before the actual video
+// area (.panel-video) gets what's left, so a panel exactly 300px tall only
+// gives Twitch roughly 265px of video -- just under its own floor, which is
+// exactly the "Autoplay disabled... style visibility, viewport visibility"
+// console error this was producing on every single open/retry. +50px here
+// keeps the real video area comfortably above 300px.
+const DEFAULT_H = 350;
 const CHAT_DEFAULT_W = 360;
 const CHAT_DEFAULT_H = 520;
 const MIN_W = 240;
