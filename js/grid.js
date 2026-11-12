@@ -197,6 +197,11 @@ export function addPanel(target, opts = {}) {
     z: nextZ(),
   };
   update((s) => { s.panels.push(panel); });
+  // Reflow everything using whichever auto-arrange template is currently
+  // selected, so the new window (stream or detached chat) actually gets
+  // placed well instead of just dropped at computeInitialPosition's organic
+  // spot -- see reflowWithCurrentTemplate below.
+  reflowWithCurrentTemplate();
   return id;
 }
 
@@ -257,18 +262,18 @@ export function togglePanelChat(id) {
   });
 }
 
-// Cycles through AUTO_ARRANGE_TEMPLATES, laying every open panel out edge-to
-// -edge (no gap, no outer margin) so it reads like a real multiviewer wall --
-// only each panel's 1px border separates neighbors. (GAP is still used
-// elsewhere -- organic placement of newly-added panels, and positioning a
-// detached chat next to its source -- just not here.)
-export function autoArrange() {
+// Lays every open panel out edge-to-edge (no gap, no outer margin) per the
+// given template, so it reads like a real multiviewer wall -- only each
+// panel's 1px border separates neighbors. (GAP is still used elsewhere --
+// organic placement of newly-added panels, and positioning a detached chat
+// next to its source -- just not here.) Shared by the manual "自動整列"
+// button (autoArrange, below) and the automatic reflow that runs whenever a
+// window is added (reflowWithCurrentTemplate, below) -- the only difference
+// between the two is whether the template cycle advances afterward.
+function applyArrangeTemplate(template) {
   const state = getState();
   const panels = state.panels;
   if (!panels.length) return;
-
-  const template = AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex];
-  autoArrangeCycleIndex = (autoArrangeCycleIndex + 1) % AUTO_ARRANGE_TEMPLATES.length;
 
   // Any pending swap (⇄) selection is about to be invalidated by the
   // reshuffle below -- clear it rather than leave a stale highlighted panel.
@@ -294,6 +299,30 @@ export function autoArrange() {
       if (p) { p.x = pl.x; p.y = pl.y; p.w = pl.w; p.h = pl.h; }
     }
   });
+}
+
+// Re-applies whichever auto-arrange template is CURRENTLY selected (i.e.
+// whatever the "自動整列" button would show/apply right now), without
+// advancing the cycle -- called automatically every time a window is added
+// (a new stream panel via addPanel, or a chat detached into its own floating
+// window via detachChat, which itself goes through addPanel) so the layout
+// keeps reflowing to use the available space as panels come and go, without
+// the user having to press the button by hand after every single addition.
+// Pressing the button itself still cycles to the next template as before --
+// this only ever reapplies whatever was last selected (or the default,
+// grid-1, if the button has never been pressed this session).
+function reflowWithCurrentTemplate() {
+  if (!canvasWrapEl) return; // grid not initialized yet (shouldn't happen post-startup)
+  applyArrangeTemplate(AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex]);
+}
+
+// Cycles through AUTO_ARRANGE_TEMPLATES -- see applyArrangeTemplate above
+// for the actual layout logic.
+export function autoArrange() {
+  if (!getState().panels.length) return;
+  const template = AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex];
+  applyArrangeTemplate(template);
+  autoArrangeCycleIndex = (autoArrangeCycleIndex + 1) % AUTO_ARRANGE_TEMPLATES.length;
 
   if (autoArrangeBtn) {
     const next = AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex];
