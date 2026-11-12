@@ -232,6 +232,12 @@ export function detachChat(panelId) {
 export function removePanel(id) {
   if (swapSourceId === id) swapSourceId = null; // closing a panel mid-swap-selection cancels it
   update((s) => { s.panels = s.panels.filter((p) => p.id !== id); });
+  // Same reflow as addPanel -- closing a window should give the remaining
+  // ones back the freed-up space (per whichever auto-arrange template is
+  // currently selected), not leave them sized for a panel count that no
+  // longer exists. No-ops harmlessly if that was the last panel (see
+  // applyArrangeTemplate's empty-panels check).
+  reflowWithCurrentTemplate();
 }
 
 export function clearAllPanels() {
