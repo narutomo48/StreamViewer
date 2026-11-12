@@ -396,7 +396,20 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
 .resize-handle {
   position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
   cursor: nwse-resize; touch-action: none;
-  background: linear-gradient(135deg, transparent 50%, var(--border) 50%, var(--border) 60%, transparent 60%, transparent 70%, var(--border) 70%, var(--border) 80%, transparent 80%);
+  /* Fully transparent on purpose -- it used to paint a visible diagonal
+     stripe here, but that sits exactly on top of the video iframe's
+     bottom-right corner (it's appended after .panel-body, so it paints over
+     it). Twitch's embed does its own "is this iframe obscured by another
+     element" check as part of its autoplay eligibility test (documented on
+     Twitch's dev forum as the "style visibility" failure reason, separate
+     from the size/"viewport visibility" one -- see
+     https://discuss.dev.twitch.com/t/embed-api-autoplay-disabled/64205),
+     and a real (non-transparent) element painted over even a small corner
+     of the iframe is a textbook trigger for it. The cursor (nwse-resize)
+     still shows this is a drag handle; it just no longer paints anything
+     visible over the video.
+  */
+  background: transparent;
 }
 
 /* ---------- Modals ---------- */
