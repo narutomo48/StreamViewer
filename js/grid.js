@@ -585,7 +585,7 @@ function mountPanel(panel) {
   if (panel.target.platform === "twitch") {
     const forcePlayBtn = el("button", {
       class: "ctrl-btn",
-      title: "【検証用】強制的にミュート+再生を試みる",
+      title: "停止/スタックしてしまった再生の再開を試みます(最初の自動再生ができない場合は、動画内のTwitch自体の▶ボタンを直接クリックしてください)",
       onclick: () => { try { inst.player && inst.player.forcePlay && inst.player.forcePlay(); } catch {} },
     }, "🛠▶");
     headerChildren.push(forcePlayBtn);
