@@ -179,7 +179,7 @@ export function addPanel(target, opts = {}) {
     avatar: opts.avatar || "",
     volume: typeof opts.volume === "number" ? opts.volume : 80,
     muted: !!opts.muted,
-    showChat: kind === "chat" ? true : (opts.showChat !== undefined ? !!opts.showChat : true),
+    showChat: kind === "chat" ? true : (opts.showChat !== undefined ? !!opts.showChat : false),
     x: pos.x, y: pos.y,
     w: typeof opts.w === "number" ? opts.w : defaultW,
     h: typeof opts.h === "number" ? opts.h : defaultH,
