@@ -56,6 +56,10 @@ export async function createTwitchPlayer(container, target, opts = {}) {
   let destroyed = false;
   let current = null; // { div, player, messageHandler, timers: number[] }
   let recreateAttempts = 0;
+  let resizeObserver = null;
+  let resizeDebounceTimer = null;
+  let lastMeasuredW = 0;
+  let lastMeasuredH = 0;
 
   function clearCurrent() {
     if (!current) return;
@@ -73,9 +77,30 @@ export async function createTwitchPlayer(container, target, opts = {}) {
     div.style.height = "100%";
     container.appendChild(div);
 
+    // Twitch's own docs/examples always pass literal pixel NUMBERS here,
+    // never a percentage string -- and its dev forum has reports that a
+    // "100%" width/height can leave Twitch's embed unable to numerically
+    // verify the rendered size against its own minimum-size-for-autoplay
+    // check, which it apparently treats conservatively as not meeting the
+    // requirement (see "style visibility" discussion:
+    // https://discuss.dev.twitch.com/t/embed-api-autoplay-disabled/64205).
+    // That matches what we're seeing exactly: the error fires every single
+    // time regardless of how big the panel actually looks on screen,
+    // because Twitch was never told a real number to check against -- it
+    // was only ever handed the string "100%". Measuring the container's own
+    // current rendered box (getBoundingClientRect forces a synchronous
+    // layout, so this is accurate even right after insertion) and handing
+    // Twitch that as plain numbers should let it verify correctly instead
+    // of refusing to autoplay out of caution.
+    const rect = container.getBoundingClientRect();
+    const measuredW = Math.round(rect.width) || 480;
+    const measuredH = Math.round(rect.height) || 300;
+    lastMeasuredW = measuredW;
+    lastMeasuredH = measuredH;
+
     const playerOpts = {
-      width: "100%",
-      height: "100%",
+      width: measuredW,
+      height: measuredH,
       parent: getTwitchParentList(),
       autoplay: true,
       muted: !!muted,
@@ -163,6 +188,34 @@ export async function createTwitchPlayer(container, target, opts = {}) {
 
   current = mountOnce();
 
+  // The pixel numbers above are only measured once, at creation -- if the
+  // user later drags the panel's own resize handle, the Twitch-created
+  // iframe doesn't know to follow along (it was told fixed numbers, not
+  // "100%"), so without this it would stay whatever size it started at.
+  // Watch the actual container for real size changes and rebuild the player
+  // with freshly-measured numbers when one happens; ignore tiny jitter
+  // (sub-pixel reflows) and debounce so a drag-resize only rebuilds once,
+  // after the user lets go, rather than on every intermediate frame.
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver((entries) => {
+      if (destroyed) return;
+      const entry = entries[0];
+      if (!entry) return;
+      const w = Math.round(entry.contentRect.width);
+      const h = Math.round(entry.contentRect.height);
+      if (!w || !h) return;
+      if (Math.abs(w - lastMeasuredW) < 10 && Math.abs(h - lastMeasuredH) < 10) return;
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(() => {
+        if (destroyed) return;
+        recreateAttempts = 0; // a deliberate resize, not a stuck-playback retry -- don't eat into that budget
+        clearCurrent();
+        current = mountOnce();
+      }, 400);
+    });
+    resizeObserver.observe(container);
+  }
+
   return {
     setVolume(v) {
       try {
@@ -181,6 +234,11 @@ export async function createTwitchPlayer(container, target, opts = {}) {
         current.player.play();
       } catch {}
     },
-    destroy() { destroyed = true; clearCurrent(); },
+    destroy() {
+      destroyed = true;
+      clearTimeout(resizeDebounceTimer);
+      if (resizeObserver) resizeObserver.disconnect();
+      clearCurrent();
+    },
   };
 }
