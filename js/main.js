@@ -1,5 +1,5 @@
 import { qs, toast } from "./utils/dom.js";
-import { initGrid, autoArrange, clearAllPanels, reloadAllPanels } from "./grid.js";
+import { initGrid, autoArrange, clearAllPanels, reloadAllPanels, reflowWithCurrentTemplate } from "./grid.js";
 import { initSidebar, refreshAuthButtons, onTwitchLoginCompleted, autoRefreshLiveStatusOnStartup } from "./sidebar.js";
 import { initPresetBar } from "./presets.js";
 import { initSettings } from "./settings.js";
@@ -11,7 +11,16 @@ import { APP_VERSION } from "./version.js";
 function wireTopbar() {
   const sidebarToggle = qs("#sidebarToggle");
   const sidebar = qs("#sidebar");
-  sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("collapsed"));
+  sidebarToggle.addEventListener("click", () => {
+    sidebar.classList.toggle("collapsed");
+    // Showing/hiding the sidebar changes how much width #canvasWrap actually
+    // has (see #sidebar's margin-left rule in style.css), so the panels'
+    // current auto-arrange layout is no longer sized for the space that's
+    // actually available -- reflow once the sidebar's own slide transition
+    // (.18s) has finished, so this reads the canvas's real post-transition
+    // size rather than its size mid-animation.
+    setTimeout(reflowWithCurrentTemplate, 220);
+  });
 
   // Start collapsed on narrow screens so the canvas is visible first.
   if (window.innerWidth <= 820) sidebar.classList.add("collapsed");
