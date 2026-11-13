@@ -6,7 +6,7 @@ import { getState, update, subscribe, nextZ, uid } from "./state.js";
 import { fallbackLabel } from "./utils/parseStream.js";
 import { createYoutubePlayer } from "./players/youtube.js";
 import { createTwitchPlayer } from "./players/twitch.js";
-import { buildChatPane } from "./chat.js";
+import { buildChatPane, destroyChatPane } from "./chat.js";
 import { el, clamp } from "./utils/dom.js";
 
 const DEFAULT_W = 480;
@@ -517,6 +517,11 @@ function destroyInstance(inst) {
   if (inst.adGuardTimer) { clearTimeout(inst.adGuardTimer); inst.adGuardTimer = null; }
   stopStallWatch(inst);
   try { inst.player && inst.player.destroy(); } catch {}
+  // The simple Twitch chat viewer (see twitchChatViewer.js) opens its own
+  // WebSocket -- close it here too, not just when showChat toggles off,
+  // otherwise closing a panel (or a standalone chat window) outright would
+  // leave that connection open and silently reconnecting forever.
+  if (inst.chatBox) destroyChatPane(inst.chatBox);
   try { inst.root.remove(); } catch {}
 }
 
@@ -828,6 +833,7 @@ function updateInstance(inst, panel) {
       if (!inst.body.contains(inst.chatBox)) inst.body.appendChild(inst.chatBox);
       buildChatPane(panel.target, inst.chatBox);
     } else if (inst.body.contains(inst.chatBox)) {
+      destroyChatPane(inst.chatBox); // stop the simple viewer's WebSocket before clearing/detaching it
       inst.chatBox.innerHTML = "";
       inst.body.removeChild(inst.chatBox);
     }

@@ -393,6 +393,45 @@ select:focus, input:focus { outline: 1px solid var(--accent-2); }
    share space with, so it should fill the whole panel body. */
 .panel-chat.standalone { flex: 1 1 auto; max-width: 100%; border-left: none; }
 
+/* Twitch chat mode toolbar ("シンプル表示" / "公式チャット") and the simple,
+   from-scratch chat viewer built on Twitch's own IRC feed (see
+   twitchChatViewer.js) -- bypasses the official embed's hype-train/gift
+   banners entirely instead of trying to hide them. */
+.chat-mode-toolbar {
+  display: flex; gap: 4px; padding: 4px 6px;
+  border-bottom: 1px solid var(--border); background: var(--panel-2);
+  flex: 0 0 auto;
+}
+.chat-mode-btn {
+  font-size: 11px; padding: 3px 9px; border-radius: 10px;
+  border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+  cursor: pointer;
+}
+.chat-mode-btn:hover { border-color: var(--accent-2); color: var(--text); }
+.chat-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #1a0a10; font-weight: 600; }
+.chat-mode-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.chat-mode-body iframe { flex: 1 1 auto; width: 100%; border: 0; }
+
+.twitch-chat-viewer { flex: 1 1 auto; min-width: 0; display: flex; background: #000; }
+.chat-viewer-list {
+  flex: 1 1 auto; overflow-y: auto; padding: 6px 8px;
+  font-size: 12.5px; line-height: 1.45;
+}
+.chat-viewer-row { margin-bottom: 3px; word-break: break-word; }
+.chat-viewer-system {
+  display: block; margin: 4px 0; padding: 3px 7px; font-size: 11px;
+  color: var(--text-dim); background: var(--panel); border-radius: 6px;
+}
+.chat-badge {
+  display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 4px;
+  margin-right: 3px; border-radius: 3px; background: var(--panel-2);
+  color: var(--text-dim); vertical-align: middle;
+}
+.chat-name { font-weight: 600; }
+.chat-colon { color: var(--text-dim); }
+.chat-body { color: var(--text); }
+.chat-emote { height: 1.6em; vertical-align: middle; margin: 0 1px; }
+
 .resize-handle {
   position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
   cursor: nwse-resize; touch-action: none;
