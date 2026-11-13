@@ -54,6 +54,15 @@ const AUTO_ARRANGE_TEMPLATES = [
   { key: "row", label: "横一列" },
 ];
 let autoArrangeCycleIndex = 0;
+// The template actually currently in effect / shown on the "自動整列" button
+// label -- NOT the same thing as AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex],
+// which (see autoArrange below) already points at the NEXT template to apply
+// on the following click, not the one just applied. Kept in sync by
+// applyArrangeTemplate below every time any arrangement actually runs, and
+// read by reflowWithCurrentTemplate for the automatic re-flow on
+// add/remove/sidebar-toggle, so that automatic re-flow always matches
+// whatever the button currently displays, never the upcoming one.
+let currentArrangeTemplate = AUTO_ARRANGE_TEMPLATES[0];
 const instances = new Map(); // panelId -> { root, videoBox, chatBox, player, headerVolume, muteBtn, chatBtn, destroyed, isChatOnly }
 
 // Position/size swap (⇄ button in each panel's header): lets the user trade
@@ -305,24 +314,26 @@ function applyArrangeTemplate(template) {
       if (p) { p.x = pl.x; p.y = pl.y; p.w = pl.w; p.h = pl.h; }
     }
   });
+
+  currentArrangeTemplate = template; // record what's now actually in effect -- see its declaration above
 }
 
-// Re-applies whichever auto-arrange template is CURRENTLY selected (i.e.
-// whatever the "自動整列" button would show/apply right now), without
-// advancing the cycle -- called automatically every time a window is added
-// (a new stream panel via addPanel, or a chat detached into its own floating
-// window via detachChat, which itself goes through addPanel) or closed
-// (removePanel), and also exported for main.js to call after the sidebar is
-// shown/hidden (its width change is what actually frees up/eats into
-// #canvasWrap's available space) -- so the layout keeps reflowing to use
-// whatever space is actually available, without the user having to press
-// the button by hand every time. Pressing the button itself still cycles to
-// the next template as before -- this only ever reapplies whatever was last
-// selected (or the default, grid-1, if the button has never been pressed
-// this session).
+// Re-applies currentArrangeTemplate -- i.e. whatever template the "自動整列"
+// button currently DISPLAYS as active, which is the one most recently
+// applied, not AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex] (that index is
+// already pointing at the *next* template to switch to on the following
+// click -- see autoArrange below). Called automatically every time a window
+// is added (a new stream panel via addPanel, or a chat detached into its own
+// floating window via detachChat, which itself goes through addPanel) or
+// closed (removePanel), and also exported for main.js to call after the
+// sidebar is shown/hidden (its width change is what actually frees up/eats
+// into #canvasWrap's available space) -- so the layout keeps reflowing to
+// use whatever space is actually available, without the user having to
+// press the button by hand every time, and without ever silently switching
+// to a different template than the one the user actually selected.
 export function reflowWithCurrentTemplate() {
   if (!canvasWrapEl) return; // grid not initialized yet (shouldn't happen post-startup)
-  applyArrangeTemplate(AUTO_ARRANGE_TEMPLATES[autoArrangeCycleIndex]);
+  applyArrangeTemplate(currentArrangeTemplate);
 }
 
 // Cycles through AUTO_ARRANGE_TEMPLATES -- see applyArrangeTemplate above
